@@ -11,6 +11,40 @@ import pandas as pd
 from scipy.interpolate import griddata, RegularGridInterpolator
 from pyproj import Proj
 
+
+
+def in_area_s_test(area_coord_s, x, y, grid):
+    """
+    Crops the given x, y, and grid to only include values within the specified area.
+    
+    Parameters:
+        x (numpy.ndarray): 1D array of x-coordinates.
+        y (numpy.ndarray): 1D array of y-coordinates.
+        grid (numpy.ndarray): 2D array representing the grid values.
+        area_coord_s (list): [x0, x1, y0, y1] defining the bounding box.
+
+    Returns:
+        tuple: (cropped_x, cropped_y, cropped_grid)
+    """
+    x0, x1, y0, y1 = area_coord_s
+    
+    # Find indices within the specified range
+    x_mask = (x >= x0) & (x <= x1)
+    y_mask = (y >= y0) & (y <= y1)
+    
+    # Apply masks to get cropped x and y
+    cropped_x = x[x_mask]
+    cropped_y = y[y_mask]
+    
+    # Get the index ranges
+    x_indices = np.where(x_mask)[0]
+    y_indices = np.where(y_mask)[0]
+    
+    # Crop the grid accordingly
+    cropped_grid = grid[np.min(y_indices):np.max(y_indices)+1, np.min(x_indices):np.max(x_indices)+1]
+    
+    return cropped_x, cropped_y, cropped_grid
+
 def in_area_s(acs,x,y,g):
     '''
     Limit the size of the originial dataset to make interpolation easier
@@ -32,7 +66,85 @@ def in_area_s(acs,x,y,g):
     x = np.unique(x)
     y = np.unique(y)
     
-    x_s = x[((acs[0]-50000)<=x) & (x<=(acs[1]+50000))]
+    x_s = x[((acs[0])<=x) & (x<=(acs[1]))]
+    y_s = y[((acs[2])>=y) & (y>=(acs[3]))]
+    
+    grid_s = g[np.ix_(((acs[2]>=y)) & (y>=(acs[3])),((acs[0])<=x) & (x<=(acs[1])))]
+    grid_s = np.transpose(grid_s)
+    
+    print(len(x_s), len(y_s), np.shape(grid_s))
+
+    return x_s,y_s,grid_s
+
+
+def in_area_s_rough(acs, x, y, g):
+    '''
+    Limit the size of the original dataset to make interpolation easier,
+    while adding one row and column of values back on all edges.
+
+    Parameters
+    ----------
+    acs : list or tuple
+        [xmin, xmax, ymin, ymax] defining the research area.
+    x : numpy array
+        xi of grid (unique x-coordinates).
+    y : numpy array
+        yi of grid (unique y-coordinates).
+    g : numpy array
+        Data grid corresponding to x and y.
+
+    Returns
+    -------
+    x_s : numpy array
+        Smaller xi of grid with one extra row/column.
+    y_s : numpy array
+        Smaller yi of grid with one extra row/column.
+    grid_s : numpy array
+        Smaller data grid with one extra row/column.
+    '''
+
+    # Ensure unique sorted values
+    x = np.unique(x)
+    y = np.unique(y)
+
+    # Find indices for cropping
+    x_idx = np.where((acs[0] <= x) & (x <= acs[1]))[0]
+    y_idx = np.where((acs[3] <= y) & (y <= acs[2]))[0]
+
+    # Expand indices to include one additional row/column
+    x_idx = np.arange(max(0, x_idx[0] - 1), min(len(x), x_idx[-1] + 2))
+    y_idx = np.arange(max(0, y_idx[0] - 1), min(len(y), y_idx[-1] + 2))
+
+    # Extract the smaller region
+    x_s = x[x_idx]
+    y_s = y[y_idx]
+    grid_s = g[np.ix_(y_idx, x_idx)]  # Maintain correct orientation
+
+    return x_s, y_s, grid_s
+
+
+def in_area_s_old(acs,x,y,g):
+    '''
+    Limit the size of the originial dataset to make interpolation easier
+
+    Parameters
+    ----------
+    acs : research area coordinates
+    x : xi of grid
+    y : yi of grid
+    g : data grid
+
+    Returns
+    -------
+    x_s : smaller xi of grid
+    y_s : smaller yi of grid
+    grid_s : smaller data grid
+    '''
+    
+    x = np.unique(x)
+    y = np.unique(y)
+    
+    x_s = x[((acs[0]-50000)<=x) & (x<=(acs[1]+50000))] # buffer by 50000, doof
     y_s = y[((acs[2]+50000)>=y) & (y>=(acs[3]-50000))]
     
     grid_s = g[np.ix_(((acs[2]+50000>=y)) & (y>=(acs[3]-50000)),((acs[0]-50000)<=x) & (x<=(acs[1]+50000)))]
@@ -248,6 +360,7 @@ def define_profile(x_profile,y_profile,dist_int):
 
 def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
     '''
+    fix_maybe?
     create the costum interface for the sediment layer, which needs to lie under the topography
 
     Parameters
@@ -270,172 +383,42 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
     grid_sed = np.transpose(grid_sed)
     for j in range(np.shape(grid_sed)[1]-1):
         for i in range(np.shape(grid_sed)[0]-1):
-            zero_count = sum(1 for x in [grid_sed[i,j],grid_sed[i+1,j],grid_sed[i,j+1],grid_sed[i+1,j+1]] if x == 0)
-            if zero_count == 4:
-                # sed
-                # none
-                
-                # topo
-                triangle = pg.Mesh(3,isGeometry=True)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=4)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
-                surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                triangles_topo.append(triangle)
-                
-                triangle = pg.Mesh(3,isGeometry=True)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
-                surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                triangles_topo.append(triangle)
-                continue
-            elif zero_count == 3:
-                if grid_sed[i,j] != 0:
-                    # sed
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km],marker=5)
-                    triangle.createNode([x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km],marker=9)
-                    triangle.createNode([x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km],marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
-                    triangles_sed.append(triangle)
-                    
-                    # topo
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=4)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    continue
-                elif grid_sed[i+1,j] != 0:
-                    # sed
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode([x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km],marker=5)
-                    triangle.createNode([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km],marker=9)
-                    triangle.createNode([x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km],marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
-                    triangles_sed.append(triangle)
-                    
-                    # topo
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    continue
-                elif grid_sed[i,j+1] != 0:
-                    # sed
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode([x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km],marker=5)
-                    triangle.createNode([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km],marker=9)
-                    triangle.createNode([x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km],marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
-                    triangles_sed.append(triangle)
-                    
-                    # topo
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    continue
-                elif grid_sed[i+1,j+1] != 0:
-                    # sed
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode([x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km],marker=5)
-                    triangle.createNode([x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km],marker=9)
-                    triangle.createNode([x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km],marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
-                    triangles_sed.append(triangle)
-                    
-                    # topo
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    
-                    triangle = pg.Mesh(3,isGeometry=True)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
-                    triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
-                    triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
-                    surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                    triangles_topo.append(triangle)
-                    continue
-            else:
-                # sed
-                triangle = pg.Mesh(3,isGeometry=True)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km,marker=5)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km,marker=5)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km,marker=5)
-                surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=5)
-                triangles_sed.append(triangle)
-                
-                triangle = pg.Mesh(3,isGeometry=True)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km,marker=5)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km,marker=5)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km,marker=5)
-                surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=5)
-                triangles_sed.append(triangle)
-                
-                # topo
-                triangle = pg.Mesh(3,isGeometry=True)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=4)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
-                surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                triangles_topo.append(triangle)
-                
-                triangle = pg.Mesh(3,isGeometry=True)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
-                triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
-                triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
-                surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
-                triangles_topo.append(triangle)
-                continue
+            zero_count = sum(1 for x in [grid_sed[i,j],grid_sed[i+1,j],grid_sed[i,j+1],grid_sed[i+1,j+1]] if x == 0) # checks if any neighbours are zero
+            #print(zero_count) # i dotn use this because we never have sediments, so we never have a zero
+            # sed
+            triangle = pg.Mesh(3,isGeometry=True)
+            triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km,marker=5) # because sediment seems to be given as thickness not as height of boundary
+            triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km,marker=5)
+            triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km,marker=5)
+            surf = [0,1,2]
+            triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+            triangles_sed.append(triangle)
+            
+            triangle = pg.Mesh(3,isGeometry=True)
+            triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km,marker=5)
+            triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km,marker=5)
+            triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km,marker=5)
+            surf = [0,1,2]
+            triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+            triangles_sed.append(triangle)
+            
+            # topo
+            triangle = pg.Mesh(3,isGeometry=True)
+            triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=4)
+            triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
+            triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
+            surf = [0,1,2]
+            triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+            triangles_topo.append(triangle)
+            
+            triangle = pg.Mesh(3,isGeometry=True)
+            triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
+            triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
+            triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
+            surf = [0,1,2]
+            triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+            triangles_topo.append(triangle)
+            
     
     # merge all
     surface_topo = mt.mergePLC(triangles_topo)
