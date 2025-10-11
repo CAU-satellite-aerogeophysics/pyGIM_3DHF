@@ -6,7 +6,6 @@ interfaces. Based on this a surface geothermal heat flow can be calculated.
 """
 
 import pygimli as pg
-import pygimli.meshtools as mt
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -14,12 +13,9 @@ import matplotlib.cm as cm
 from matplotlib import ticker
 import cartopy.crs as ccrs
 from cartopy.mpl.ticker import (LongitudeFormatter, LatitudeFormatter)
-from scipy.interpolate import griddata,RegularGridInterpolator
 import datetime
 import pickle
-from scipy.stats import norm
 import gepy
-km = 1000
 
 #%%___General parameters______________________________
 
@@ -112,23 +108,10 @@ plt.show()
 
 #%%___build the world_________________________________
 
-profile_length = np.round(np.sqrt((profile_coord[0][1]-profile_coord[0][0])**2 + (profile_coord[1][1]-profile_coord[1][0])**2))
+mesh,line_list = gepy.build_world_2d(data_list, profile_coord, area=None,
+                                      layers=layers, do_sediments=do_sediments)
 
-# create 2d mesh from the input data
-
-world_start = [0,4*km] 
-world_end = [profile_length,-220*km]
-
-world = mt.createWorld(start=world_start,end=world_end, worldMarker=False)
-
-topo_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_t,profile_topo)],marker = 5,boundaryMarker = 5,isClosed=False)
-sed_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_t,profile_topo-profile_sed_for_topo)],marker = 6,boundaryMarker = 6,isClosed=False)
-moho_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_m,-profile_moho)],marker = 7,boundaryMarker = 7,isClosed=False)
-lab_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_l,-profile_lab)],marker = 8,boundaryMarker = 8,isClosed=False)
-
-world = world + sed_line + moho_line + lab_line + topo_line
-
-mesh = mt.createMesh(world,quality=34,area=profile_length*4)#,area=500000
+#%%___apply correct markers to cells and nodes________
 
 # create lists for temperature and heat production that are to be applied to the nodes
 force = np.zeros(mesh.nodeCount())
@@ -271,6 +254,8 @@ for i, node in enumerate(mesh.nodes()):
 
 
 # gradient_full = pg.solver.grad(mesh,T)
+
+
 # gradient_nodes = pg.solver.grad(mesh, T, nodes_pos)
 # gradient_nodes_norm = np.linalg.norm(gradient_nodes,axis=1)
 

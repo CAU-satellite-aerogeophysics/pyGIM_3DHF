@@ -20,7 +20,6 @@ Some points to keep in mind:
 """
 
 import pygimli as pg
-import pygimli.meshtools as mt
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -29,18 +28,10 @@ import matplotlib.cm as cm
 from matplotlib import ticker
 import cartopy.crs as ccrs
 from cartopy.mpl.ticker import (LongitudeFormatter, LatitudeFormatter)
-#import polygon_setup as ps
-from scipy.interpolate import griddata,LinearNDInterpolator, RegularGridInterpolator
 from scipy.spatial import KDTree
 import datetime
 import pickle
-from scipy.stats import norm
 import gepy
-from pyproj import CRS, Transformer
-
-# from skimage.util.shape import view_as_windows
-
-# data_calc,data_resolution = gepy.load_data()
 
 #%%___General parameters______________________________
 
@@ -90,16 +81,6 @@ for i,layer in enumerate(data_input):
                                         do_sediments=do_sediments, do_hp=do_hp, hp_0=hp_0)
     data_list.append(data)
 
-
-
-
-
-
-
-
-
-
-
 """
 #%% ja/nein/vielleicht?
 
@@ -119,40 +100,8 @@ grid_A_for_topo = grid_A_for_topo*grid_A_norm*1.5
 
 #%%___build the world_________________________________
 
-mesh = gepy.build_world(data_list, area_coords,
-                        layers = layers, do_sediments=do_sediments, do_hp=do_hp, border = 10)
-
-
-# create 3d mesh from the input data
-
-# the +/- 10 are to create a slight buffer around the input data and world edge, there are issues
-# in the mesh creation when edges of boundaries touch other boundaries
-border = 10
-start = [(area_coords[0]-border)/km,(area_coords[2]+border)/km,4] 
-end = [(area_coords[1]+border)/km,(area_coords[3]-border)/km,-220]
-
-world = mt.createWorld(start=start,end=end, worldMarker=False)
-
-# create layer polygons and shift them to the correct height
-mesh_moho = mt.createMesh2D(x_int_m/km,y_int_m/km)
-mesh_lab  = mt.createMesh2D(x_int_l/km,y_int_l/km)
-
-surface_moho = mt.createSurface(mesh_moho)
-surface_lab  = mt.createSurface(mesh_lab)
-
-surface_moho = gepy.fix_surface_height(surface_moho, x_int_m/km, y_int_m/km, -grid_moho/km)
-surface_lab  = gepy.fix_surface_height(surface_lab, x_int_l/km, y_int_l/km, -grid_lab/km)
-
-for boundary in surface_moho.boundaries():
-    boundary.setMarker(6)
-for boundary in surface_lab.boundaries():
-    boundary.setMarker(7)
-
-surface_topo,surface_sed = gepy.create_sed_interface(x_int_t, y_int_t, grid_topo, grid_sed)
-
-geometry = world + surface_topo + surface_sed + surface_moho + surface_lab
-
-mesh = mt.createMesh(geometry,quality=34,area=2.5)#,area=2.5
+mesh,layer_list = gepy.build_world_3d(data_list, area_coords, area=2.5,
+                                      layers = layers, do_sediments=do_sediments, border = 10)
 
 # print(geometry)
 # pg.show(geometry,showMesh=True,alpha=0.7)
@@ -160,7 +109,7 @@ mesh = mt.createMesh(geometry,quality=34,area=2.5)#,area=2.5
 # print(mesh)
 # pg.show(mesh,showMesh=True,alpha=0.7)
 
-#%% apply correct markers to cells and nodes, and create temp and force vectors
+#%%___apply correct markers to cells and nodes________
 
 grid_xy_ts = np.array(list(zip(xi_int_t.flatten()/km,yi_int_t.flatten()/km)))
 tree_ts = KDTree(grid_xy_ts)
