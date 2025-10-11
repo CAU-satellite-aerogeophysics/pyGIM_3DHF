@@ -11,6 +11,121 @@ import pandas as pd
 from scipy.interpolate import griddata, RegularGridInterpolator
 from pyproj import Proj
 
+
+
+# def load_and_interpolate_2d()
+
+
+#
+# wir wollen:
+# topo, (sed), (moho), lab, resolution list, coordinates
+#
+
+
+# def build_world()
+
+# def calc_ghf()
+
+"""
+def load_and_interpolate_3d():
+    xi_topo_s, yi_topo_s, grid_topo_s = gepy.in_area_s(area_coord_s,data_calc[0][0],data_calc[0][1],data_calc[0][2])
+    xi_sed_s, yi_sed_s, grid_sed_s    = gepy.in_area_s(area_coord_s,data_calc[1][0],data_calc[1][1],data_calc[1][2])
+    xi_moho_s, yi_moho_s, grid_moho_s = gepy.in_area_s(area_coord_s,data_calc[2][0],data_calc[2][1],data_calc[2][2])
+    xi_lab_s, yi_lab_s, grid_lab_s    = gepy.in_area_s(area_coord_s,data_calc[3][0],data_calc[3][1],data_calc[3][2])
+
+    xii_topo_s,yii_topo_s = np.meshgrid(xi_topo_s,yi_topo_s)
+    xii_sed_s,yii_sed_s   = np.meshgrid(xi_sed_s,yi_sed_s)
+    xii_moho_s,yii_moho_s = np.meshgrid(xi_moho_s,yi_moho_s)
+    xii_lab_s,yii_lab_s   = np.meshgrid(xi_lab_s,yi_lab_s)
+
+    # 
+
+    res_topo,res_moho,res_lab = (1000,10000,10000)
+
+    x_int_t,y_int_t = np.arange(area_coord_s[0],area_coord_s[1]+res_topo,res_topo),np.arange(area_coord_s[3],area_coord_s[2]+res_topo,res_topo)
+    x_int_m,y_int_m = np.arange(area_coord_s[0],area_coord_s[1]+res_moho,res_moho),np.arange(area_coord_s[3],area_coord_s[2]+res_moho,res_moho)
+    x_int_l,y_int_l = np.arange(area_coord_s[0],area_coord_s[1]+res_lab,res_lab),np.arange(area_coord_s[3],area_coord_s[2]+res_lab,res_lab)
+
+    xi_int_t,yi_int_t = np.meshgrid(x_int_t,y_int_t)
+    xi_int_m,yi_int_m = np.meshgrid(x_int_m,y_int_m)
+    xi_int_l,yi_int_l = np.meshgrid(x_int_l,y_int_l)
+
+    interp_topo = RegularGridInterpolator((np.unique(xi_topo_s),np.unique(yi_topo_s)),grid_topo_s)
+    grid_topo = interp_topo((xi_int_t,yi_int_t))
+
+    interp_sed = RegularGridInterpolator((np.unique(xi_sed_s),np.unique(yi_sed_s)),grid_sed_s)
+    grid_sed = interp_sed((xi_int_t,yi_int_t),method='linear')
+
+    for i in range(np.shape(grid_sed)[0]):
+        for j in range(np.shape(grid_sed)[1]):
+            grid_sed[i,j] = round(grid_sed[i,j]/35)*35
+
+    interp_moho = RegularGridInterpolator((np.unique(xi_moho_s),np.unique(yi_moho_s)),grid_moho_s)
+    grid_moho = interp_moho((xi_int_m,yi_int_m))
+    grid_moho_for_topo = interp_moho((xi_int_t,yi_int_t))
+
+    interp_lab = RegularGridInterpolator((np.unique(xi_lab_s),np.unique(yi_lab_s)),grid_lab_s)
+    grid_lab = interp_lab((xi_int_l,yi_int_l))
+    grid_lab_for_topo = interp_lab((xi_int_t,yi_int_t))
+
+    # heat production
+
+    xi_smos_s, yi_smos_s, A_s = gepy.in_area_s(area_coord_s,xi_smos,yi_smos,A)
+    xii_smos_s,yii_smos_s   = np.meshgrid(xi_smos_s,yi_smos_s)
+        
+    res_HP = 12500
+        
+    x_int_HP,y_int_HP = np.arange(area_coord_s[0],area_coord_s[1]+res_HP,res_HP),np.arange(area_coord_s[3],area_coord_s[2]+res_HP,res_HP)
+    xi_int_HP,yi_int_HP = np.meshgrid(x_int_HP,y_int_HP)
+
+    grid_A  = griddata((xii_smos_s.flatten(), yii_smos_s.flatten()), np.transpose(A_s).flatten(), (xi_int_HP,yi_int_HP),fill_value=0.000001)
+    interp_A = RegularGridInterpolator((x_int_HP,y_int_HP),np.transpose(grid_A))
+    grid_A_for_topo = interp_A((xi_int_t,yi_int_t))
+     
+    return 
+
+    del A_s,xi_smos,yi_smos,xi_smos_s,yi_smos_s,xii_smos_s,yii_smos_s    
+    del grid_topo_s,xi_topo_s,yi_topo_s,xii_topo_s,yii_topo_s
+    del grid_sed_s,xi_sed_s,yi_sed_s,xii_sed_s,yii_sed_s
+    del grid_moho_s,xi_moho_s,yi_moho_s,xii_moho_s,yii_moho_s
+    del grid_lab_s,xi_lab_s,yi_lab_s,xii_lab_s,yii_lab_s
+
+"""
+
+def load_and_interpolate_3d(layer               ,
+                            resolution          ,
+                            i                   ,
+                            layers              ,
+                            area_coords         ,
+                            do_sediments = False,
+                            do_hp = False       ,
+                            hp_0 = None
+                            ):
+    
+    data,xi,yi = layer["data"],layer["x"],layer["y"]
+    
+    xi_s,yi_s,data_s = in_area_s(area_coords,xi,yi,data)
+    xii_s,yii_s = np.meshgrid(xi_s,yi_s)
+    x_int,y_int = np.arange(area_coords[0],area_coords[1]+resolution[i],resolution[i]),np.arange(area_coords[3],area_coords[2]+resolution[i],resolution[i])
+    xi_int,yi_int = np.meshgrid(x_int,y_int)
+
+    if do_hp:
+        grid_temp  = griddata((xii_s.flatten(), yii_s.flatten()), data.flatten(), (xi_int,yi_int),fill_value=hp_0)
+        interp = RegularGridInterpolator((x_int,y_int),grid_temp)
+        x_int_t,y_int_t = np.arange(area_coords[0],area_coords[1]+resolution[0],resolution[0]),np.arange(area_coords[3],area_coords[2]+resolution[0],resolution[0])
+        xi_int_t,yi_int_t = np.meshgrid(x_int_t,y_int_t)
+        grid = interp((xi_int_t,yi_int_t))
+    else:
+        interp = RegularGridInterpolator((np.unique(xi_s),np.unique(yi_s)),data_s)
+        grid = interp((xi_int,yi_int))
+
+    if do_sediments:
+        for i in range(np.shape(grid)[0]):
+            for j in range(np.shape(grid)[1]):
+                grid[i,j] = round(grid[i,j]/35)*35
+
+    return x_int,y_int,grid
+
 def in_area_s(acs,x,y,g):
     '''
     Limit the size of the originial dataset to make interpolation easier
@@ -103,84 +218,6 @@ def compare_to_plane(x,y,data,grid_xy,tree):
     F = (-x*norm[0] - y*norm[1] - D)/norm[2]
 
     return F
-
-
-def load_data():
-    '''
-    load the input data with this external function to make the actual scripts slightly smaller
-
-    Returns
-    -------
-    list gridded x and y, and the data grid for topo, sed thickness, moho depth, and lab depth
-    list of data grid resolutions
-    '''
-    # bedmap
-    
-    data_topo = pd.read_csv('data/bedmap2_bed.txt', skiprows=6, sep=' ',header=None)
-    data_topo = data_topo.iloc[:,:-1]
-    data_topo = data_topo.iloc[::-1].reset_index(drop=True)
-    grid_topo = np.asarray(data_topo)
-
-    # x_sp_topo = np.arange(-3333500,3333500,1000)
-    # y_sp_topo = np.arange(-3333500,3333500,1000)
-
-    # xi_sp_topo,yi_sp_topo = np.meshgrid(x_sp_topo,y_sp_topo)
-
-    # transformer = Transformer.from_crs("EPSG:3031","ESRI:102019")
-    # xi_topo = np.zeros(np.shape(xi_sp_topo))
-    # yi_topo = np.zeros(np.shape(yi_sp_topo))
-    # for i in range(np.shape(xi_topo)[0]):
-    #     for j in range(np.shape(xi_topo)[1]):
-    #         xi_topo[i,j],yi_topo[i,j] = transformer.transform(xi_sp_topo[i,j],yi_sp_topo[i,j])
-            
-    x_ae_topo = np.linspace(-3348244,3348244,6667)
-    y_ae_topo = np.linspace(-3348244,3348244,6667)
-    
-    xi_topo,yi_topo = np.meshgrid(x_ae_topo,y_ae_topo)
-            
-    # sediment
-
-    data_sed = pd.read_csv('data/sedimentary_layers_in_equidistant_projection.dat', delimiter=' ')
-    y_sed = data_sed.phy*111e3
-    x_sed = data_sed.theta*111e3
-    
-    x_ae_sed = np.arange(np.min(x_sed),np.max(x_sed)+9250,9250)
-    y_ae_sed = np.arange(np.min(y_sed),np.max(y_sed)+9250,9250)
-
-    xi_sed, yi_sed = np.meshgrid(x_ae_sed,y_ae_sed)
-
-    grid_sed = griddata((x_sed,y_sed),data_sed.total_thickness,(xi_sed,yi_sed),method='linear')*1000
-    
-    # moho
-    
-    data_H_Moho = pd.read_csv("data/Haeger_Moho.csv", sep=',', comment="#")
-    data_H_Moho['Lat'] = data_H_Moho['Lat'].apply(lambda x: -x if x > 0 else x)
-    
-    myProj = Proj("+proj=aeqd +lat_0=-90")
-    x_moho, y_moho  = myProj(data_H_Moho.Lon, data_H_Moho.Lat)
-    
-    x_ae_moho = np.arange(np.min(x_moho),np.max(x_moho)+10000,10000)
-    y_ae_moho = np.arange(np.min(y_moho),np.max(y_moho)+10000,10000)
-     
-    xi_moho, yi_moho = np.meshgrid(x_ae_moho,y_ae_moho)
-    
-    grid_moho = griddata((x_moho,y_moho),data_H_Moho.Moho,(xi_moho,yi_moho))*1000
-    
-    # lab
-    
-    data_H_LAB = pd.read_csv("data/Haeger_LAB.csv", sep=',', comment="#")
-    data_H_LAB['Lat'] = data_H_LAB['Lat'].apply(lambda x: -x if x > 0 else x)
-    
-    x_lab, y_lab = myProj(data_H_LAB.Lon, data_H_LAB.Lat)
-    
-    x_ae_lab = np.arange(np.min(x_lab),np.max(x_lab)+10000,10000)
-    y_ae_lab = np.arange(np.min(y_lab),np.max(y_lab)+10000,10000)
-    
-    xi_lab, yi_lab = np.meshgrid(x_ae_lab,y_ae_lab)
-    
-    grid_lab = griddata((x_lab,y_lab),data_H_LAB.LAB,(xi_lab,yi_lab))*1000
-    
-    return [[xi_topo,yi_topo,grid_topo],[xi_sed,yi_sed,grid_sed],[xi_moho,yi_moho,grid_moho],[xi_lab,yi_lab,grid_lab]],[1000,9250,10000,10000]
 
 
 def define_profile(x_profile,y_profile,dist_int):
@@ -441,3 +478,91 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
     surface_topo = mt.mergePLC(triangles_topo)
     surface_sed = mt.mergePLC(triangles_sed)
     return surface_topo, surface_sed
+
+#%% top be discarded:
+    
+def load_data():
+    '''
+    load the input data with this external function to make the actual scripts slightly smaller
+
+    Returns
+    -------
+    list gridded x and y, and the data grid for topo, sed thickness, moho depth, and lab depth
+    list of data grid resolutions
+    '''
+    # bedmap
+    
+    data_topo = pd.read_csv('data/bedmap2_bed.txt', skiprows=6, sep=' ',header=None)
+    data_topo = data_topo.iloc[:,:-1]
+    data_topo = data_topo.iloc[::-1].reset_index(drop=True)
+    grid_topo = np.asarray(data_topo)
+
+    # x_sp_topo = np.arange(-3333500,3333500,1000)
+    # y_sp_topo = np.arange(-3333500,3333500,1000)
+
+    # xi_sp_topo,yi_sp_topo = np.meshgrid(x_sp_topo,y_sp_topo)
+
+    # transformer = Transformer.from_crs("EPSG:3031","ESRI:102019")
+    # xi_topo = np.zeros(np.shape(xi_sp_topo))
+    # yi_topo = np.zeros(np.shape(yi_sp_topo))
+    # for i in range(np.shape(xi_topo)[0]):
+    #     for j in range(np.shape(xi_topo)[1]):
+    #         xi_topo[i,j],yi_topo[i,j] = transformer.transform(xi_sp_topo[i,j],yi_sp_topo[i,j])
+            
+    x_ae_topo = np.linspace(-3348244,3348244,6667)
+    y_ae_topo = np.linspace(-3348244,3348244,6667)
+    
+    xi_topo,yi_topo = np.meshgrid(x_ae_topo,y_ae_topo)
+            
+    # sediment
+
+    data_sed = pd.read_csv('data/sedimentary_layers_in_equidistant_projection.dat', delimiter=' ')
+    y_sed = data_sed.phy*111e3
+    x_sed = data_sed.theta*111e3
+    
+    x_ae_sed = np.arange(np.min(x_sed),np.max(x_sed)+9250,9250)
+    y_ae_sed = np.arange(np.min(y_sed),np.max(y_sed)+9250,9250)
+
+    xi_sed, yi_sed = np.meshgrid(x_ae_sed,y_ae_sed)
+
+    grid_sed = griddata((x_sed,y_sed),data_sed.total_thickness,(xi_sed,yi_sed),method='linear')*1000
+    
+    # moho
+    
+    data_H_Moho = pd.read_csv("data/Haeger_Moho.csv", sep=',', comment="#")
+    data_H_Moho['Lat'] = data_H_Moho['Lat'].apply(lambda x: -x if x > 0 else x)
+    
+    myProj = Proj("+proj=aeqd +lat_0=-90")
+    x_moho, y_moho  = myProj(data_H_Moho.Lon, data_H_Moho.Lat)
+    
+    x_ae_moho = np.arange(np.min(x_moho),np.max(x_moho)+10000,10000)
+    y_ae_moho = np.arange(np.min(y_moho),np.max(y_moho)+10000,10000)
+     
+    xi_moho, yi_moho = np.meshgrid(x_ae_moho,y_ae_moho)
+    
+    grid_moho = griddata((x_moho,y_moho),data_H_Moho.Moho,(xi_moho,yi_moho))*1000
+    
+    # lab
+    
+    data_H_LAB = pd.read_csv("data/Haeger_LAB.csv", sep=',', comment="#")
+    data_H_LAB['Lat'] = data_H_LAB['Lat'].apply(lambda x: -x if x > 0 else x)
+    
+    x_lab, y_lab = myProj(data_H_LAB.Lon, data_H_LAB.Lat)
+    
+    x_ae_lab = np.arange(np.min(x_lab),np.max(x_lab)+10000,10000)
+    y_ae_lab = np.arange(np.min(y_lab),np.max(y_lab)+10000,10000)
+    
+    xi_lab, yi_lab = np.meshgrid(x_ae_lab,y_ae_lab)
+    
+    grid_lab = griddata((x_lab,y_lab),data_H_LAB.LAB,(xi_lab,yi_lab))*1000
+    
+    return [[xi_topo,yi_topo,grid_topo],[xi_sed,yi_sed,grid_sed],[xi_moho,yi_moho,grid_moho],[xi_lab,yi_lab,grid_lab]],[1000,9250,10000,10000]
+
+
+
+
+
+
+
+
+
