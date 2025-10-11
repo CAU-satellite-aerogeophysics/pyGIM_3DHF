@@ -11,20 +11,108 @@ import pandas as pd
 from scipy.interpolate import griddata, RegularGridInterpolator
 from pyproj import Proj
 
-
+km = 1000
 
 # def load_and_interpolate_2d()
+# def load_and_interpolate_3d()
 
 
-#
-# wir wollen:
-# topo, (sed), (moho), lab, resolution list, coordinates
-#
-
-
+# class build_world ? 
+#   would maybe allow for things like setting up differen thermal parameters for the same mesh
 # def build_world()
 
+
+# def assign t_params
+
 # def calc_ghf()
+
+def build_world(data_list           ,
+                area_coords         ,
+                layers = None       ,
+                do_sediments = False,
+                do_hp = False       ,
+                border = None       
+                ):
+    
+    start = [(area_coords[0]-border)/km,(area_coords[2]+border)/km,4] 
+    end = [(area_coords[1]+border)/km,(area_coords[3]-border)/km,-220]
+    
+    world = mt.createWorld(start=start,end=end, worldMarker=False)
+    
+    # create layer polygons and shift them to the correct height
+    
+    if layers == 2:
+        # topo + LAB
+    elif layers == 2 and do_hp:
+        # topo + LAB + HP
+    elif layers == 3 and not do_sediments and not do_hp:    
+        # topo + Moho + LAB
+    elif layers == 3 and not do_sediments and do_hp:
+        # topo + Moho + LAB + HP
+    elif layers == 3 and do_sediments and not do_hp:
+        # topo + Sed + LAB
+    elif layers == 3 and do_sediments and do_hp:
+        # topo + Sed + LAB + HP
+    elif layers == 4 and do_sediments and not do_hp:
+        # topo + Sed + Moho + LAB
+    elif layers == 4 and do_sediments and do_hp:   
+        # topo + Sed + Moho + LAB + HP
+        
+
+    mesh_moho = mt.createMesh2D(x_int_m/km,y_int_m/km)
+    mesh_lab  = mt.createMesh2D(x_int_l/km,y_int_l/km)
+    
+return mesh
+    
+    
+    
+"""
+border = 10
+start = [(area_coords[0]-border)/km,(area_coords[2]+border)/km,4] 
+end = [(area_coords[1]+border)/km,(area_coords[3]-border)/km,-220]
+
+world = mt.createWorld(start=start,end=end, worldMarker=False)
+
+# create layer polygons and shift them to the correct height
+mesh_moho = mt.createMesh2D(x_int_m/km,y_int_m/km)
+mesh_lab  = mt.createMesh2D(x_int_l/km,y_int_l/km)
+
+surface_moho = mt.createSurface(mesh_moho)
+surface_lab  = mt.createSurface(mesh_lab)
+
+surface_moho = gepy.fix_surface_height(surface_moho, x_int_m/km, y_int_m/km, -grid_moho/km)
+surface_lab  = gepy.fix_surface_height(surface_lab, x_int_l/km, y_int_l/km, -grid_lab/km)
+
+for boundary in surface_moho.boundaries():
+    boundary.setMarker(6)
+for boundary in surface_lab.boundaries():
+    boundary.setMarker(7)
+
+surface_topo,surface_sed = gepy.create_sed_interface(x_int_t, y_int_t, grid_topo, grid_sed)
+
+geometry = world + surface_topo + surface_sed + surface_moho + surface_lab
+
+mesh = mt.createMesh(geometry,quality=34,area=2.5)#,area=2.5
+"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 """
 def load_and_interpolate_3d():
@@ -92,15 +180,15 @@ def load_and_interpolate_3d():
 
 """
 
-def load_and_interpolate_3d(layer               ,
-                            resolution          ,
-                            i                   ,
-                            layers              ,
-                            area_coords         ,
-                            do_sediments = False,
-                            do_hp = False       ,
-                            hp_0 = None
-                            ):
+def cut_and_interpolate_3d(layer               ,
+                           resolution          ,
+                           i                   ,
+                           layers              ,
+                           area_coords         ,
+                           do_sediments = False,
+                           do_hp = False       ,
+                           hp_0 = None
+                           ):
     
     data,xi,yi = layer["data"],layer["x"],layer["y"]
     
@@ -109,7 +197,7 @@ def load_and_interpolate_3d(layer               ,
     x_int,y_int = np.arange(area_coords[0],area_coords[1]+resolution[i],resolution[i]),np.arange(area_coords[3],area_coords[2]+resolution[i],resolution[i])
     xi_int,yi_int = np.meshgrid(x_int,y_int)
 
-    if do_hp:
+    if do_hp and layers == i:
         grid_temp  = griddata((xii_s.flatten(), yii_s.flatten()), data.flatten(), (xi_int,yi_int),fill_value=hp_0)
         interp = RegularGridInterpolator((x_int,y_int),grid_temp)
         x_int_t,y_int_t = np.arange(area_coords[0],area_coords[1]+resolution[0],resolution[0]),np.arange(area_coords[3],area_coords[2]+resolution[0],resolution[0])
@@ -119,12 +207,180 @@ def load_and_interpolate_3d(layer               ,
         interp = RegularGridInterpolator((np.unique(xi_s),np.unique(yi_s)),data_s)
         grid = interp((xi_int,yi_int))
 
-    if do_sediments:
+    if do_sediments and i==1:
         for i in range(np.shape(grid)[0]):
             for j in range(np.shape(grid)[1]):
                 grid[i,j] = round(grid[i,j]/35)*35
 
     return x_int,y_int,grid
+
+"""
+data_calc,data_resolution = gepy.load_data()
+
+x_profile,y_profile = (profile_coord[0],profile_coord[1])
+
+profile_length = np.round(np.sqrt((x_profile[1]-x_profile[0])**2 + (y_profile[1]-y_profile[0])**2))
+
+x_int_t, y_int_t, dist_prof_t = gepy.define_profile(x_profile, y_profile, data_resolution[0])
+x_int_s, y_int_s, dist_prof_s = gepy.define_profile(x_profile, y_profile, data_resolution[1])
+x_int_m, y_int_m, dist_prof_m = gepy.define_profile(x_profile, y_profile, data_resolution[2])
+x_int_l, y_int_l, dist_prof_l = gepy.define_profile(x_profile, y_profile, data_resolution[3])
+
+dist_prof_t = np.round(dist_prof_t)
+dist_prof_s = np.round(dist_prof_s)
+dist_prof_m = np.round(dist_prof_m)
+dist_prof_l = np.round(dist_prof_l)
+
+xvals_t = np.unique(np.asarray(data_calc[0][0]))
+yvals_t = np.unique(np.asarray(data_calc[0][1]))
+
+xvals_s = np.unique(np.asarray(data_calc[1][0]))
+yvals_s = np.unique(np.asarray(data_calc[1][1]))
+
+xvals_m = np.unique(np.asarray(data_calc[2][0]))
+yvals_m = np.unique(np.asarray(data_calc[2][1]))
+
+xvals_l = np.unique(np.asarray(data_calc[3][0]))
+yvals_l = np.unique(np.asarray(data_calc[3][1]))
+
+interp_func = RegularGridInterpolator((yvals_t,xvals_t),np.asarray(data_calc[0][2]))
+profile_topo = interp_func((y_int_t,x_int_t),method="linear").tolist()
+profile_topo = np.round(profile_topo,decimals=3)
+
+interp_func = RegularGridInterpolator((yvals_s,xvals_s),np.asarray(data_calc[1][2]))
+profile_sed = interp_func((y_int_s,x_int_s),method="linear").tolist()
+profile_sed = np.round(profile_sed,decimals=3)
+
+interp_func = RegularGridInterpolator((yvals_m,xvals_m),np.asarray(data_calc[2][2]))
+profile_moho = interp_func((y_int_m,x_int_m),method="linear").tolist()
+profile_moho = np.round(profile_moho,decimals=3)
+
+interp_func = RegularGridInterpolator((yvals_l,xvals_l),np.asarray(data_calc[3][2]))
+profile_lab = interp_func((y_int_l,x_int_l),method="linear").tolist()
+profile_lab = np.round(profile_lab,decimals=3)
+
+profile_topo_for_sed = np.interp(dist_prof_s,dist_prof_t,profile_topo)
+profile_sed_for_topo = np.interp(dist_prof_t,dist_prof_s,profile_sed)
+profile_sed_for_topo = np.round(profile_sed_for_topo,decimals=-1)
+
+profile_moho_for_topo = np.interp(dist_prof_t,dist_prof_m,profile_moho)
+profile_lab_for_topo = np.interp(dist_prof_t,dist_prof_l,profile_lab)
+
+# heat production:
+data_HP = np.load("data/SMOS_hp.npz")
+grid_A_ws = data_HP['A_ws']
+grid_A_wo = data_HP['A_wo']
+
+xi_smos,yi_smos = data_HP['xi_smos'],data_HP['yi_smos']
+x_int_A, y_int_A, dist_prof_A = gepy.define_profile(x_profile, y_profile, 12500)
+dist_prof_A = np.round(dist_prof_A)
+xvals_A = np.unique(xi_smos)
+yvals_A = np.unique(yi_smos)
+interp_func = RegularGridInterpolator((yvals_A,xvals_A),np.asarray(grid_A_ws))
+profile_A = interp_func((y_int_A,x_int_A),method="linear").tolist()
+# profile_A = np.round(profile_A,decimals=3)
+profile_A_for_topo = np.interp(dist_prof_t,dist_prof_A,profile_A)
+
+# profile_A_norm = profile_A_for_topo/np.max(profile_A_for_topo)
+# profile_A_for_topo = profile_A_for_topo*profile_A_norm*1.5
+
+
+# single layer scheiße
+
+xi_topo_s_a2, yi_topo_s_a2, grid_topo_s_a2 = gepy.in_area_s(area_coord_s,data_calc[0][0],data_calc[0][1],data_calc[0][2])
+xi_sed_s_a2, yi_sed_s_a2, grid_sed_s_a2    = gepy.in_area_s(area_coord_s,data_calc[1][0],data_calc[1][1],data_calc[1][2])
+xi_moho_s_a2, yi_moho_s_a2, grid_moho_s_a2 = gepy.in_area_s(area_coord_s,data_calc[2][0],data_calc[2][1],data_calc[2][2])
+xi_lab_s_a2, yi_lab_s_a2, grid_lab_s_a2    = gepy.in_area_s(area_coord_s,data_calc[3][0],data_calc[3][1],data_calc[3][2])
+xii_topo_s_a2,yii_topo_s_a2 = np.meshgrid(xi_topo_s_a2,yi_topo_s_a2)
+xii_sed_s_a2,yii_sed_s_a2   = np.meshgrid(xi_sed_s_a2,yi_sed_s_a2)
+xii_moho_s_a2,yii_moho_s_a2 = np.meshgrid(xi_moho_s_a2,yi_moho_s_a2)
+xii_lab_s_a2,yii_lab_s_a2   = np.meshgrid(xi_lab_s_a2,yi_lab_s_a2)
+res_topo,res_moho,res_lab = (1000,10000,10000)
+x_int_t_a2,y_int_t_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_topo,res_topo),np.arange(area_coord_s[3],area_coord_s[2]+res_topo,res_topo)
+x_int_m_a2,y_int_m_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_moho,res_moho),np.arange(area_coord_s[3],area_coord_s[2]+res_moho,res_moho)
+x_int_l_a2,y_int_l_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_lab,res_lab),np.arange(area_coord_s[3],area_coord_s[2]+res_lab,res_lab)
+xi_int_t_a2,yi_int_t_a2 = np.meshgrid(x_int_t_a2,y_int_t_a2)
+xi_int_m_a2,yi_int_m_a2 = np.meshgrid(x_int_m_a2,y_int_m_a2)
+xi_int_l_a2,yi_int_l_a2 = np.meshgrid(x_int_l_a2,y_int_l_a2)
+interp_topo_a2 = RegularGridInterpolator((np.unique(xi_topo_s_a2),np.unique(yi_topo_s_a2)),grid_topo_s_a2)
+grid_topo_a2 = interp_topo_a2((xi_int_t_a2,yi_int_t_a2))
+interp_sed_a2 = RegularGridInterpolator((np.unique(xi_sed_s_a2),np.unique(yi_sed_s_a2)),grid_sed_s_a2)
+grid_sed_a2 = interp_sed_a2((xi_int_t_a2,yi_int_t_a2),method='linear')
+interp_moho_a2 = RegularGridInterpolator((np.unique(xi_moho_s_a2),np.unique(yi_moho_s_a2)),grid_moho_s_a2)
+grid_moho_a2 = interp_moho_a2((xi_int_m_a2,yi_int_m_a2))
+grid_moho_for_topo_a2 = interp_moho_a2((xi_int_t_a2,yi_int_t_a2))
+interp_lab_a2 = RegularGridInterpolator((np.unique(xi_lab_s_a2),np.unique(yi_lab_s_a2)),grid_lab_s_a2)
+grid_lab_a2 = interp_lab_a2((xi_int_l_a2,yi_int_l_a2))
+grid_lab_for_topo_a2 = interp_lab_a2((xi_int_t_a2,yi_int_t_a2))
+xi_smos_s_a2, yi_smos_s_a2, A_s_a2 = gepy.in_area_s(area_coord_s,xi_smos,yi_smos,grid_A_ws)
+xii_smos_s_a2,yii_smos_s_a2   = np.meshgrid(xi_smos_s_a2,yi_smos_s_a2)    
+res_HP = 12500
+x_int_HP_a2,y_int_HP_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_HP,res_HP),  np.arange(area_coord_s[3],area_coord_s[2]+res_HP,res_HP)
+xi_int_HP_a2,yi_int_HP_a2 = np.meshgrid(x_int_HP_a2,y_int_HP_a2)
+grid_A_a2  = griddata((xii_smos_s_a2.flatten(), yii_smos_s_a2.flatten()), np.transpose(A_s_a2).flatten(), (xi_int_HP_a2,yi_int_HP_a2),fill_value=0.000001)
+# interp_A = RegularGridInterpolator((x_int_HP,y_int_HP),np.transpose(grid_A))
+interp_A_a2 = RegularGridInterpolator((x_int_HP_a2,y_int_HP_a2),np.transpose(grid_A_a2))
+grid_A_for_topo_a2 = interp_A_a2((xi_int_t_a2,yi_int_t_a2))
+
+# select which interfaces are part of the world
+
+# profile_topo = np.full(len(profile_topo),np.mean(grid_topo_a2))
+# profile_sed = np.full(len(profile_sed),np.mean(grid_sed_a2))
+# profile_sed_for_topo = np.full(len(profile_sed_for_topo),np.mean(grid_sed_a2))
+# profile_moho = np.full(len(profile_moho),np.mean(grid_moho_a2))
+# profile_moho_for_topo = np.full(len(profile_topo),np.mean(grid_moho_for_topo_a2))
+# profile_lab = np.full(len(profile_lab),np.mean(grid_lab_a2))
+# profile_lab_for_topo = np.full(len(profile_topo),np.mean(grid_lab_for_topo_a2))
+# profile_A = np.full(len(profile_A),np.mean(grid_A_a2))
+# profile_A_for_topo = np.full(len(profile_A_for_topo),np.mean(grid_A_for_topo_a2))
+
+profile_sed_depth = profile_topo-profile_sed_for_topo
+"""
+
+def cut_and_interpolate_2d(layer               ,
+                           resolution          ,
+                           i                   ,
+                           layers              ,
+                           area_coords         ,
+                           profile_coord       ,
+                           do_sediments = False,
+                           do_hp = False       ,
+                           hp_0 = None
+                           ):
+    
+    data,xi,yi = layer["data"],layer["x"],layer["y"]
+    
+    x_profile,y_profile = (profile_coord[0],profile_coord[1])
+    x_int, y_int, dist_prof = define_profile(x_profile, y_profile, resolution[i])
+    dist_prof = np.round(dist_prof)
+    
+    xvals = np.unique(np.asarray(xi))
+    yvals = np.unique(np.asarray(yi))
+    
+    interp_func = RegularGridInterpolator((yvals,xvals),np.asarray(data))
+    profile = interp_func((y_int,x_int),method="linear").tolist()
+    profile = np.round(profile,decimals=3)
+    
+    if do_sediments and i==1:
+        x_int_t, y_int_t, dist_prof_t = define_profile(x_profile, y_profile, resolution[0])
+        dist_prof_t = np.round(dist_prof_t)
+        profile = np.interp(dist_prof_t,dist_prof,profile)
+        profile = np.round(profile,decimals=-1)
+    elif do_sediments and i==layers:
+        x_int_t, y_int_t, dist_prof_t = define_profile(x_profile, y_profile, resolution[0])
+        interp_func = RegularGridInterpolator((yvals,xvals),np.asarray(data))
+        profile = interp_func((y_int,x_int),method="linear").tolist()
+        profile = np.interp(dist_prof_t,dist_prof,profile)
+    else:
+        x_int_t, y_int_t, dist_prof_t = define_profile(x_profile, y_profile, resolution[0])
+        dist_prof = np.round(dist_prof)
+        profile = np.interp(dist_prof_t,dist_prof,profile)
+        profile = np.round(profile,decimals=-1)
+    
+    return dist_prof,profile
+
+
+
 
 def in_area_s(acs,x,y,g):
     '''

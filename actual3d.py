@@ -37,21 +37,21 @@ import pickle
 from scipy.stats import norm
 import gepy
 from pyproj import CRS, Transformer
-km = 1000
+
 # from skimage.util.shape import view_as_windows
 
 # data_calc,data_resolution = gepy.load_data()
 
-#%%  Parameters
+#%%___General parameters______________________________
 
-#_____Coordinates_____
+#_____Coordinates_____________________________________
 
 # like profile coord, but take x0,x1 and y0,y1 of area, area width/length should be divisible by 10000
 area_coords = [1300000,1400000,-275000,-375000] # Lake Vostok "south-western" edge
 # area_coord_s = [1355000,1435000,-855000,-985000] # Dome C
 # area_coord_s = [1800000,1900000,-650000,-750000] # ASB
 
-#_____Layers & thermal parameters_____
+#_____Layers & thermal parameters_____________________
 
 layers = 4
 do_sediments = True
@@ -62,7 +62,7 @@ k1 = 2.7
 k2 = 3.5
 hp_0 = 0.000001
 
-#_____Data Input____
+#_____Data Input______________________________________
 
 data_input = []
 
@@ -72,38 +72,35 @@ data_input.append(np.load("data_example/Moho.npz"))
 data_input.append(np.load("data_example/LAB.npz"))
 data_input.append(np.load("data_example/HP.npz"))
 
-"""
-data_list = []
-for i in data:
-    data_list.append(i["data"],i["x"],i["y"])
-"""
-
 data_resolution = [1000,9250,10000,10000,12500]
 
-#%% cut data to size & interpolate into region
+#%%___Thermal parameters______________________________
 
+k0 = 1.5
+k1 = 2.7
+k2 = 3.5
+hp_0 = 0.000001
+
+#%%___cut data to size & interpolate into region______
 
 data_list = []
 
 for i,layer in enumerate(data_input):
-    data = gepy.load_and_interpolate_3d(layer, data_resolution, i, layers,area_coords,
+    data = gepy.cut_and_interpolate_3d(layer, data_resolution, i, layers,area_coords,
                                         do_sediments=do_sediments, do_hp=do_hp, hp_0=hp_0)
+    data_list.append(data)
+
+
+
+
+
+
+
+
+
+
 
 """
-gepy.load_and_interpolate(topo["data"],topo["x"],topo["y"],
-                          sed["data"],sed["x"],sed["y"],
-                          moho["data"],moho["x"],moho["y"],
-                          LAB["data"],LAB["x"],LAB["y"],
-                          HP["data"],HP["x"],HP["y"],
-                          resolution,
-                          area_coords)
-"""
-
-
-
-
-
-
 #%% ja/nein/vielleicht?
 
 notes = '3d_LV_A_1.5_norm'
@@ -118,8 +115,13 @@ grid_lab = np.full(np.shape(grid_lab),np.mean(grid_lab))
 
 grid_A_norm = grid_A_for_topo/np.max(grid_A_for_topo)
 grid_A_for_topo = grid_A_for_topo*grid_A_norm*1.5
+"""
 
-#%% build the world
+#%%___build the world_________________________________
+
+mesh = gepy.build_world(data_list, area_coords,
+                        layers = layers, do_sediments=do_sediments, do_hp=do_hp, border = 10)
+
 
 # create 3d mesh from the input data
 
