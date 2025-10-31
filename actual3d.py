@@ -55,6 +55,8 @@ k2 = 3.5
 tc = [k0,k1,k2]
 
 hp_0 = 0.000001
+# If you have input HP data: do not use hp_0 in any function.
+# If you do not have input HP data: set a hp_0 value and give it in 
 
 #_____Data Input______________________________________
 
@@ -123,41 +125,14 @@ mesh,force = gepy.assign_markers_3d(data_list, mesh,
 
 #%% run calc and get shf
 
-T = pg.solver.solveFiniteElements(mesh,
-                                a={1: 1.0*km, 4: 1.5*km, 5: 2.7*km, 6: 3.5*km, 7: 4.0*km},
-                                f=force*km*km*km,
-                                bc={'Dirichlet': {7: 1315, 4: 0}},verbose=True)#{'Node': Tnode}
-
-T_list = [T[i] for i in range(len(T))]
+T = gepy.calc_temp(mesh, "3D", force, layers,do_sediments = True,tc = tc)
 
 # pg.show(mesh,data=T,showMesh=True, label='Temperature in °C', cMap="inferno")
 
-# gradient = pg.solver.grad(mesh, T)
+shf_3D = gepy.calc_ghf(T, mesh, data_list, "3D", tc)
 
 # pg.show(mesh,data=gradient[:,2],filter={'clip':{'origin':(1050, 0, 0)},})
 
-topcoord = []
-for i in range(len(x_int_t)):
-    for j in range(len(y_int_t)):
-        topcoord.append([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[j,i]-5)/km])
-
-gradientTop = pg.solver.grad(mesh, T, topcoord)
-
-geology_list = []
-
-shf = np.zeros(len(gradientTop))
-for i in range(len(gradientTop)):
-    point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
-    cell = mesh.findCell(point)
-    geology = cell.marker()
-    geology_list.append(geology)
-    if geology == 5:   
-        shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
-    elif geology == 4:
-        shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
-
-shf_3D = np.transpose(np.reshape(shf,(len(x_int_t),len(y_int_t))))
-gradientTop_rs = np.reshape(gradientTop[:,2],(len(x_int_t),len(y_int_t)))
 
 #%% Plot data and compare to 1D result
 

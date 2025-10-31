@@ -12,34 +12,198 @@ from scipy.spatial import KDTree
 
 km = 1000
 
-# def calc_ghf()
+#%% calc_ghf
+def calc_ghf(T,
+             mesh,
+             data_list,
+             dimension,
+             tc,
+             do_sediments = False,
+             ):
 
-#%% calc_temp_
-
-
+    if dimension == '3D':
+        topcoord = []
+        x_int = np.unique(data_list[0][0])
+        y_int = np.unique(data_list[0][1])
+        for i in range(len(x_int)):
+            for j in range(len(y_int)):
+                topcoord.append([x_int[i]/km,y_int[j]/km,(data_list[0][2][j,i]-5)/km])
+                
+        gradientTop = pg.solver.grad(mesh, T, topcoord)
+        shf = np.zeros(len(gradientTop))
+        for i in range(len(gradientTop)):
+            point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
+            cell = mesh.findCell(point)
+            geology = cell.marker()
+            if geology == 5:   
+                shf[i] = np.linalg.norm(gradientTop[i,:])*tc[1]
+            elif geology == 4:
+                shf[i] = np.linalg.norm(gradientTop[i,:])*tc[0]
+        shf = np.transpose(np.reshape(shf,(len(x_int),len(y_int))))
+        
+    elif dimension == '2D':
+        topcoord = []
+        for i in range(len(data_list[0][0])):
+            topcoord.append([data_list[0][0][i],data_list[0][1][i]-1,0])
+            
+        gradientTop = pg.solver.grad(mesh, T, topcoord)
+        shf = np.zeros(len(gradientTop))
+        for i in range(len(gradientTop)):
+            point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
+            cell = mesh.findCell(point)
+            geology = cell.marker()
+            if geology == 6:   
+                shf[i] = np.linalg.norm(gradientTop[i,:])*tc[1]
+            elif geology == 5:
+                shf[i] = np.linalg.norm(gradientTop[i,:])*tc[0]
+        shf = shf*1000 
+    else:
+        print('Please give dimension')
+    
+    return shf
+    
 '''
-
 3D:
     
-T = pg.solver.solveFiniteElements(mesh,
-                                a={1: 1.0*km, 4: 1.5*km, 5: 2.7*km, 6: 3.5*km, 7: 4.0*km},
-                                f=force*km*km*km,
-                                bc={'Dirichlet': {7: 1315, 4: 0}},verbose=True)#{'Node': Tnode}
+    topcoord = []
+    for i in range(len(x_int_t)):
+        for j in range(len(y_int_t)):
+            topcoord.append([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[j,i]-5)/km])
+
+    gradientTop = pg.solver.grad(mesh, T, topcoord)
+
+    geology_list = []
+
+    shf = np.zeros(len(gradientTop))
+    for i in range(len(gradientTop)):
+        point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
+        cell = mesh.findCell(point)
+        geology = cell.marker()
+        geology_list.append(geology)
+        if geology == 5:   
+            shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
+        elif geology == 4:
+            shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
+
+    shf_3D = np.transpose(np.reshape(shf,(len(x_int_t),len(y_int_t))))
+    gradientTop_rs = np.reshape(gradientTop[:,2],(len(x_int_t),len(y_int_t)))
+    
 
 2D:
     
-T = pg.solver.solveFiniteElements(mesh,
-                                a={0: 1.5, 5: 1.5, 6: 2.7, 7: 3.5, 8: 4.0},#0: 1.5, 1: 1.5
-                                f=force,
-                                bc={'Dirichlet': {8: 1315, 5: 0}},verbose=True)# {'Node': Tnode} }, 
+T_list = [T[i] for i in range(len(T))]
 
-'''    
+# similarly to the 3D case, I'll probably want to select other locations for the measurement points
+topcoord = []
+for i in range(len(dist_prof_t)):
+    topcoord.append([dist_prof_t[i],profile_topo[i]-1,0])
 
+gradientTop = pg.solver.grad(mesh, T, topcoord)
+
+geology_list = []
+shf = np.zeros(len(gradientTop))
+for i in range(len(gradientTop)):
+    point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
+    cell = mesh.findCell(point)
+    geology = cell.marker()
+    geology_list.append(geology)
+    if geology == 6:   
+        shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
+    elif geology == 5:
+        shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
+
+shf_2D = shf*1000 
+
+'''
+    
+    
+#%% calc_temp
+def calc_temp(mesh,
+              dimension,
+              force,
+              layers,
+              do_sediments = False,
+              tc = None,
+              Tbound = None
+              ):
+    '''
+    Calculate the temperature field on the supplied mesh
+
+    Parameters
+    ----------
+    mesh :         pygimli mesh from build_world, with assigned markers
+    dimension :    '3D' or '2D' ?
+    force :        nodal heat production values from assign_markers_
+    layers :       number of layers
+    do_sediments : is a sediment layer present?
+    do_hp :        is a heat production distribution provided?
+    tc :           list of thermal conductivities
+    Tbound :       optional costum boundary conditions for [T_LAB , T_surface]
+
+    Returns
+    -------
+    T : temperature field on mesh
+
+    '''
+    
+    if Tbound == None:
+        T_LAB = 1315
+        T_surface = 0
+    else:
+        T_LAB = T_bound[0]
+        T_surface = T_bound[1]
+    
+    if dimension == '3D':
+        if layers == 2:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={1: 1.0*km, 4: tc[0]*km, 7: 4.0*km},
+                                            f=force*km*km*km,
+                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+        elif do_sediments and layers == 3:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={1: 1.0*km, 4: tc[0]*km, 6: tc[1]*km, 7: 4.0*km},
+                                            f=force*km*km*km,
+                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+        elif not do_sediments and layers == 3:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={1: 1.0*km, 4: tc[0]*km, 6: tc[1]*km, 7: 4.0*km},
+                                            f=force*km*km*km,
+                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+        elif do_sediments and layers == 4:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={1: 1.0*km, 4: tc[0]*km, 5: tc[1]*km, 6: tc[2]*km, 7: 4.0*km},
+                                            f=force*km*km*km,
+                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+    elif dimension == '2D':
+        if layers == 2:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={0: 1.5, 5: tc[0], 8: 4.0},
+                                            f=force,
+                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+        elif do_sediments and layers == 3:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={0: 1.5, 5: tc[0], 6: tc[1], 8: 4.0},
+                                            f=force,
+                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+        elif not do_sediments and layers == 3:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={0: 1.5, 5: tc[0], 7: tc[1], 8: 4.0},
+                                            f=force,
+                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+        elif do_sediments and layers == 4:
+            T = pg.solver.solveFiniteElements(mesh,
+                                            a={0: 1.5, 5: tc[0], 6: tc[1], 7: tc[2], 8: 4.0},
+                                            f=force,
+                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+    else:
+        print('Please give dimension')
+    
+    return T
 
 #%% assing_markers_3d
 def assign_markers_3d(data_list,
                       mesh,
-                      layers = None,
+                      layers,
                       do_sediments = False,
                       do_hp = False,
                       hp_0 = None,
@@ -82,7 +246,10 @@ def assign_markers_3d(data_list,
             
             idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
             if z >= z_lab and z <= z_topo:
-                force[i] = data_list[2][2][idy_A,idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[2][2][idy_A,idx_A]
             else:
                 force[i] = 0
             
@@ -115,7 +282,10 @@ def assign_markers_3d(data_list,
             
             idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
             if z >= z_lab and z <= z_sed:
-                force[i] = data_list[3][2][idy_A,idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[3][2][idy_A,idx_A]
             else:
                 force[i] = 0
             
@@ -153,7 +323,10 @@ def assign_markers_3d(data_list,
             
             idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
             if z >= z_moho and z <= z_topo:
-                force[i] = data_list[3][2][idy_A,idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[3][2][idy_A,idx_A]
             else:
                 force[i] = 0
             
@@ -192,7 +365,10 @@ def assign_markers_3d(data_list,
             
             idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
             if z >= z_moho and z <= z_sed:
-                force[i] = data_list[4][2][idy_A,idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[4][2][idy_A,idx_A]
             else:
                 force[i] = 0
             
@@ -219,7 +395,7 @@ def assign_markers_3d(data_list,
 #%% assign_markers_2d
 def assign_markers_2d(data_list,
                       mesh,
-                      layers = None,
+                      layers,
                       do_sediments = False,
                       do_hp = False,
                       hp_0 = None,
@@ -261,7 +437,10 @@ def assign_markers_2d(data_list,
             idx_A = np.argmin(np.abs(data_list[0][0]-x))
             
             if y >= -data_list[1][1][idx_l] and y <= y_t:
-                force[i] = data_list[2][0][idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[2][0][idx_A]
             else:
                 force[i] = 0
     
@@ -300,7 +479,10 @@ def assign_markers_2d(data_list,
             idx_A = np.argmin(np.abs(data_list[0][0]-x))
             
             if y >= -data_list[2][1][idx_l] and y <= y_s:
-                force[i] = data_list[3][0][idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[3][0][idx_A]
             else:
                 force[i] = 0
     
@@ -341,7 +523,10 @@ def assign_markers_2d(data_list,
             idx_A = np.argmin(np.abs(data_list[0][0]-x))
             
             if y >= -data_list[1][1][idx_bA] and y <= y_t:
-                force[i] = data_list[3][0][idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[3][0][idx_A]
             else:
                 force[i] = 0
     
@@ -384,7 +569,10 @@ def assign_markers_2d(data_list,
             idx_A = np.argmin(np.abs(data_list[0][0]-x))
             
             if y >= -data_list[2][1][idx_bA] and y <= y_s:
-                force[i] = data_list[4][0][idx_A]
+                if hp_0 is not None:
+                    force[i] = hp_0
+                else:
+                    force[i] = data_list[4][0][idx_A]
             else:
                 force[i] = 0
     
@@ -417,7 +605,7 @@ def assign_markers_2d(data_list,
 def build_world_2d(data_list          ,
                   profile_coord       ,
                   area = None         ,
-                  layers = None       ,
+                  layers       ,
                   do_sediments = False          
                   ):
     '''
@@ -482,7 +670,7 @@ def build_world_2d(data_list          ,
 def build_world_3d(data_list          ,
                   area_coords         ,
                   area = None         ,
-                  layers = None       ,
+                  layers       ,
                   do_sediments = False,
                   border = None       
                   ):

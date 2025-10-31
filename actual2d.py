@@ -63,6 +63,8 @@ k0 = 1.5
 k1 = 2.7
 k2 = 3.5
 hp_0 = 0.000001
+# If you have input HP data: do not use hp_0 in any function.
+# If you do not have input HP data: set a hp_0 value and give it in 
 
 tc = [k0,k1,k2]
 
@@ -136,37 +138,16 @@ mesh,force = gepy.assign_markers_2d(data_list, mesh,
 
 #%% run calc and get shf
 
-T = pg.solver.solveFiniteElements(mesh,
-                                a={0: 1.5, 5: 1.5, 6: 2.7, 7: 3.5, 8: 4.0},#0: 1.5, 1: 1.5
-                                f=force,
-                                bc={'Dirichlet': {8: 1315, 5: 0}},verbose=True)# {'Node': Tnode} }, 
+T = gepy.calc_temp(mesh, "2D", force, layers,do_sediments = True,tc = tc)
+
 # pg.show(mesh,data=T,showMesh=True, label='Temperature in °C', cMap="inferno",nCols=256)
 
-T_list = [T[i] for i in range(len(T))]
+ghf_2D = gepy.calc_ghf(T, mesh, data_list, "2D", tc)
+       
 
-# similarly to the 3D case, I'll probably want to select other locations for the measurement points
-topcoord = []
-for i in range(len(dist_prof_t)):
-    topcoord.append([dist_prof_t[i],profile_topo[i]-1,0])
 
-gradientTop = pg.solver.grad(mesh, T, topcoord)
-
-geology_list = []
-shf = np.zeros(len(gradientTop))
-for i in range(len(gradientTop)):
-    point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
-    cell = mesh.findCell(point)
-    geology = cell.marker()
-    geology_list.append(geology)
-    if geology == 6:   
-        shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
-    elif geology == 5:
-        shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
-
-shf_2D = shf*1000        
-
-#%%
-
+#%% temperature depth anomaly plot
+'''
 # fig,ax = plt.subplots(figsize=(9,9),dpi=300)
 # pg.show(mesh,showMesh=True,markers=True,ax=ax,clipBoundaryMarkers=True)
 # ax.set_xlim([40000,60000])
@@ -226,6 +207,7 @@ ax.set_aspect('auto')
 # ax.set_xlabel('x in m')
 # ax.set_ylabel('depth in m')
 # ax.set_aspect('auto')
+'''
 
 #%% Plot data and compare to 1D result
 
