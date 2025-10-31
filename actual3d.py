@@ -51,6 +51,9 @@ do_hp = True
 k0 = 1.5
 k1 = 2.7
 k2 = 3.5
+
+tc = [k0,k1,k2]
+
 hp_0 = 0.000001
 
 #_____Data Input______________________________________
@@ -111,50 +114,10 @@ mesh,layer_list = gepy.build_world_3d(data_list, area_coords, area=2.5,
 
 #%%___apply correct markers to cells and nodes________
 
-grid_xy_ts = np.array(list(zip(xi_int_t.flatten()/km,yi_int_t.flatten()/km)))
-tree_ts = KDTree(grid_xy_ts)
-grid_xy_m = np.array(list(zip(xi_int_m.flatten()/km,yi_int_m.flatten()/km)))
-tree_m = KDTree(grid_xy_m)
-grid_xy_l = np.array(list(zip(xi_int_l.flatten()/km,yi_int_l.flatten()/km)))
-tree_l = KDTree(grid_xy_l)
 
-# create lists for temperature and heat production that are to be applied to the nodes
 
-force = np.zeros(mesh.nodeCount())
-# Tnode = []
-for i, node in enumerate(mesh.nodes()):
-    x,y,z = node.pos()
-    z_topo = gepy.compare_to_plane(x,y,grid_topo,grid_xy_ts,tree_ts)
-    z_sed = gepy.compare_to_plane(x,y,(grid_topo-grid_sed),grid_xy_ts,tree_ts)
-    z_moho = gepy.compare_to_plane(x,y,-grid_moho,grid_xy_m,tree_m)
-    z_lab = gepy.compare_to_plane(x,y,-grid_lab,grid_xy_l,tree_l)
-    
-    idx_A,idy_A = np.argmin(np.abs(x_int_t/km-x)),np.argmin(np.abs(y_int_t/km-y))
-    
-    if z >= z_moho and z <= z_sed:
-        force[i] = grid_A_for_topo[idy_A,idx_A]
-        # force[i] = 0.000001
-    else:
-        force[i] = 0
-    
-# apply correct marker to the cells
-for i,cell in enumerate(mesh.cells()):
-    center = cell.center()
-    x, y, z = center.x(), center.y(), center.z()
-    
-    z_topo = gepy.compare_to_plane(x,y,grid_topo,grid_xy_ts,tree_ts)
-    z_sed = gepy.compare_to_plane(x,y,(grid_topo-grid_sed),grid_xy_ts,tree_ts)
-    z_moho = gepy.compare_to_plane(x,y,-grid_moho,grid_xy_m,tree_m)
-    z_lab = gepy.compare_to_plane(x,y,-grid_lab,grid_xy_l,tree_l)
-    
-    if z < z_topo:
-        cell.setMarker(4)
-    if z < z_sed:
-        cell.setMarker(5)
-    if z < z_moho:
-        cell.setMarker(6)
-    if z < z_lab:
-        cell.setMarker(7)
+mesh,force = gepy.assign_markers_3d(data_list, mesh,
+                         layers=layers, do_sediments=do_sediments, do_hp=do_hp, hp_0=hp_0, tc=tc)
 
 # pg.show(mesh,showMesh=True)
 

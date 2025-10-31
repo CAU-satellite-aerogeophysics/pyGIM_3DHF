@@ -8,22 +8,35 @@ import pygimli as pg
 import pygimli.meshtools as mt
 import numpy as np
 from scipy.interpolate import griddata, RegularGridInterpolator
+from scipy.spatial import KDTree
 
 km = 1000
 
-# def load_and_interpolate_2d()
-# def load_and_interpolate_3d()
-
-
-# class build_world ? 
-#   would maybe allow for things like setting up differen thermal parameters for the same mesh
-# def build_world()
-
-
-# def assign t_params
-
 # def calc_ghf()
 
+#%% calc_temp_
+
+
+'''
+
+3D:
+    
+T = pg.solver.solveFiniteElements(mesh,
+                                a={1: 1.0*km, 4: 1.5*km, 5: 2.7*km, 6: 3.5*km, 7: 4.0*km},
+                                f=force*km*km*km,
+                                bc={'Dirichlet': {7: 1315, 4: 0}},verbose=True)#{'Node': Tnode}
+
+2D:
+    
+T = pg.solver.solveFiniteElements(mesh,
+                                a={0: 1.5, 5: 1.5, 6: 2.7, 7: 3.5, 8: 4.0},#0: 1.5, 1: 1.5
+                                f=force,
+                                bc={'Dirichlet': {8: 1315, 5: 0}},verbose=True)# {'Node': Tnode} }, 
+
+'''    
+
+
+#%% assing_markers_3d
 def assign_markers_3d(data_list,
                       mesh,
                       layers = None,
@@ -50,8 +63,160 @@ def assign_markers_3d(data_list,
     mesh : mesh with assigned markers and parameters
     '''
     
-    return mesh
+    grid_xy_t = np.array(list(zip(data_list[0][0].flatten()/km,data_list[0][1].flatten()/km)))
+    tree_t = KDTree(grid_xy_t)
     
+    if layers == 2:
+        grid_xy_l = np.array(list(zip(data_list[1][0].flatten()/km,data_list[1][1].flatten()/km)))
+        tree_l = KDTree(grid_xy_l)
+        
+        force = np.zeros(mesh.nodeCount())
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            
+            x,y,z = node.pos()
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_lab = compare_to_plane(x,y,-data_list[1][2],grid_xy_l,tree_l)
+            
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            if z >= z_lab and z <= z_topo:
+                force[i] = data_list[2][2][idy_A,idx_A]
+            else:
+                force[i] = 0
+            
+        for i,cell in enumerate(mesh.cells()): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_lab = compare_to_plane(x,y,-data_list[1][2],grid_xy_l,tree_l)
+            
+            if z < z_topo:
+                cell.setMarker(4)
+            if z < z_lab:
+                cell.setMarker(7)
+        
+    elif do_sediments and layers == 3:
+        grid_xy_l = np.array(list(zip(data_list[2][0].flatten()/km,data_list[2][1].flatten()/km)))
+        tree_l = KDTree(grid_xy_l)
+        
+        force = np.zeros(mesh.nodeCount())
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            
+            x,y,z = node.pos()
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_sed = compare_to_plane(x,y,(data_list[0][2]-data_list[1][2]),grid_xy_t,tree_t)
+            z_lab = compare_to_plane(x,y,-data_list[2][2],grid_xy_l,tree_l)
+            
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            if z >= z_lab and z <= z_sed:
+                force[i] = data_list[3][2][idy_A,idx_A]
+            else:
+                force[i] = 0
+            
+        for i,cell in enumerate(mesh.cells()): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_sed = compare_to_plane(x,y,(data_list[1][2]-data_list[1][2]),grid_xy_t,tree_t)
+            z_lab = compare_to_plane(x,y,-data_list[2][2],grid_xy_l,tree_l)
+            
+            if z < z_topo:
+                cell.setMarker(4)
+            if z < z_sed:
+                cell.setMarker(5)
+            if z < z_lab:
+                cell.setMarker(7)
+        
+    elif not do_sediments and layers == 3:
+        grid_xy_m = np.array(list(zip(data_list[1][0].flatten()/km,data_list[1][1].flatten()/km)))
+        tree_m = KDTree(grid_xy_m)
+        grid_xy_l = np.array(list(zip(data_list[2][0].flatten()/km,data_list[2][1].flatten()/km)))
+        tree_l = KDTree(grid_xy_l)
+        
+        force = np.zeros(mesh.nodeCount())
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            
+            x,y,z = node.pos()
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_moho = compare_to_plane(x,y,-data_list[1][2],grid_xy_m,tree_m)
+            z_lab = compare_to_plane(x,y,-data_list[2][2],grid_xy_l,tree_l)
+            
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            if z >= z_moho and z <= z_topo:
+                force[i] = data_list[3][2][idy_A,idx_A]
+            else:
+                force[i] = 0
+            
+        for i,cell in enumerate(mesh.cells()): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_moho = compare_to_plane(x,y,-data_list[1][2],grid_xy_m,tree_m)
+            z_lab = compare_to_plane(x,y,-data_list[2][2],grid_xy_l,tree_l)
+            
+            if z < z_topo:
+                cell.setMarker(4)
+            if z < z_moho:
+                cell.setMarker(6)
+            if z < z_lab:
+                cell.setMarker(7)
+        
+    elif do_sediments and layers == 4:
+        grid_xy_m = np.array(list(zip(data_list[2][0].flatten()/km,data_list[2][1].flatten()/km)))
+        tree_m = KDTree(grid_xy_m)
+        grid_xy_l = np.array(list(zip(data_list[3][0].flatten()/km,data_list[3][1].flatten()/km)))
+        tree_l = KDTree(grid_xy_l)
+    
+        force = np.zeros(mesh.nodeCount())
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            
+            x,y,z = node.pos()
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_sed = compare_to_plane(x,y,(data_list[0][2]-data_list[1][2]),grid_xy_t,tree_t)
+            z_moho = compare_to_plane(x,y,-data_list[2][2],grid_xy_m,tree_m)
+            z_lab = compare_to_plane(x,y,-data_list[3][2],grid_xy_l,tree_l)
+            
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            if z >= z_moho and z <= z_sed:
+                force[i] = data_list[4][2][idy_A,idx_A]
+            else:
+                force[i] = 0
+            
+        for i,cell in enumerate(mesh.cells()): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
+            z_sed = compare_to_plane(x,y,(data_list[1][2]-data_list[1][2]),grid_xy_t,tree_t)
+            z_moho = compare_to_plane(x,y,-data_list[2][2],grid_xy_m,tree_m)
+            z_lab = compare_to_plane(x,y,-data_list[3][2],grid_xy_l,tree_l)
+            
+            if z < z_topo:
+                cell.setMarker(4)
+            if z < z_sed:
+                cell.setMarker(5)
+            if z < z_moho:
+                cell.setMarker(6)
+            if z < z_lab:
+                cell.setMarker(7)
+    
+    return mesh,force
+
+#%% assign_markers_2d
 def assign_markers_2d(data_list,
                       mesh,
                       layers = None,
@@ -78,8 +243,177 @@ def assign_markers_2d(data_list,
     mesh : mesh with assigned markers and parameters
     '''
     
-    return mesh
+    force = np.zeros(mesh.nodeCount())
+    
+    if layers == 2:
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            x,y,z = node.pos()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
+            
+            idx_l = np.argmin(np.abs(data_list[1][0]-x))
+            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            
+            if y >= -data_list[1][1][idx_l] and y <= y_t:
+                force[i] = data_list[2][0][idx_A]
+            else:
+                force[i] = 0
+    
+        for cell in mesh.cells(): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1]
+            
+            idx_l = np.argmin(np.abs(data_list[1][0]-x))
+            
+            if y < y_t:
+                cell.setMarker(5)
+            if y < -data_list[1][1][idx_l]:
+                cell.setMarker(8)
+        
+    elif do_sediments and layers == 3:
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            x,y,z = node.pos()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_s = m_s * (x-data_list[0][0][idx_t_1]) + data_list[1][1][idx_t_1] 
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
+            
+            idx_l = np.argmin(np.abs(data_list[2][0]-x))
+            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            
+            if y >= -data_list[2][1][idx_l] and y <= y_s:
+                force[i] = data_list[3][0][idx_A]
+            else:
+                force[i] = 0
+    
+        for cell in mesh.cells(): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[1][0][idx_t_0]-data_list[1][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
+            y_s = m_s * (x-data_list[1][0][idx_t_1]) + data_list[1][1][idx_t_1] 
+            
+            idx_l = np.argmin(np.abs(data_list[2][0]-x))
+            
+            if y < y_t and y > y_s:
+                cell.setMarker(5)
+            if y < y_s:
+                cell.setMarker(6)
+            if y < -data_list[2][1][idx_l]:
+                cell.setMarker(8)
+        
+    elif not do_sediments and layers == 3:
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            x,y,z = node.pos()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
+            
+            idx_bA = np.argmin(np.abs(data_list[2][0]-x))
+            idx_l = np.argmin(np.abs(data_list[3][0]-x))
+            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            
+            if y >= -data_list[1][1][idx_bA] and y <= y_t:
+                force[i] = data_list[3][0][idx_A]
+            else:
+                force[i] = 0
+    
+        for cell in mesh.cells(): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1]
+            
+            idx_m = np.argmin(np.abs(data_list[1][0]-x))
+            idx_l = np.argmin(np.abs(data_list[2][0]-x))
+            
+            if y < y_t:
+                cell.setMarker(5)
+            if y < -data_list[1][1][idx_m]:
+                cell.setMarker(7)
+            if y < -data_list[2][1][idx_l]:
+                cell.setMarker(8)
+        
+    elif do_sediments and layers == 4:
+        for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
+            if not do_hp:
+                force[i] = 0
+                continue
+            x,y,z = node.pos()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_s = m_s * (x-data_list[0][0][idx_t_1]) + data_list[1][1][idx_t_1] 
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
+            
+            idx_bA = np.argmin(np.abs(data_list[2][0]-x))
+            idx_l = np.argmin(np.abs(data_list[3][0]-x))
+            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            
+            if y >= -data_list[2][1][idx_bA] and y <= y_s:
+                force[i] = data_list[4][0][idx_A]
+            else:
+                force[i] = 0
+    
+        for cell in mesh.cells(): # apply geology markers to cells
+            center = cell.center()
+            x, y, z = center.x(), center.y(), center.z()
+            
+            idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
+            
+            m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
+            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[1][0][idx_t_0]-data_list[1][0][idx_t_1])
+            y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
+            y_s = m_s * (x-data_list[1][0][idx_t_1]) + data_list[1][1][idx_t_1] 
+            
+            idx_m = np.argmin(np.abs(data_list[2][0]-x))
+            idx_l = np.argmin(np.abs(data_list[3][0]-x))
+            
+            if y < y_t and y > y_s:
+                cell.setMarker(5)
+            if y < y_s:
+                cell.setMarker(6)
+            if y < -data_list[2][1][idx_m]:
+                cell.setMarker(7)
+            if y < -data_list[3][1][idx_l]:
+                cell.setMarker(8)
+    
+    return mesh,force
 
+#%% build_world_2d
 def build_world_2d(data_list          ,
                   profile_coord       ,
                   area = None         ,
@@ -126,7 +460,7 @@ def build_world_2d(data_list          ,
         lab_line = mt.createPolygon([[a,b] for a,b in zip(data_list[2][0],-data_list[2][1])],marker = 8,boundaryMarker = 8,isClosed=False)
         line_list.append(moho_line)
         line_list.append(lab_line)
-    elif do_sediments and layers == 3:
+    elif do_sediments and layers == 4:
         sed_line = mt.createPolygon([[a,b] for a,b in zip(data_list[1][0],data_list[1][1])],marker = 6,boundaryMarker = 6,isClosed=False)
         moho_line = mt.createPolygon([[a,b] for a,b in zip(data_list[2][0],-data_list[2][1])],marker = 7,boundaryMarker = 7,isClosed=False)
         lab_line = mt.createPolygon([[a,b] for a,b in zip(data_list[3][0],-data_list[3][1])],marker = 8,boundaryMarker = 8,isClosed=False)
@@ -144,6 +478,7 @@ def build_world_2d(data_list          ,
     
     return mesh, line_list
 
+#%% build_world_3d
 def build_world_3d(data_list          ,
                   area_coords         ,
                   area = None         ,
@@ -226,7 +561,8 @@ def build_world_3d(data_list          ,
     mesh = mt.createMesh(geometry,quality=34,area=area)
 
     return mesh,layer_list
-    
+
+#%% cut_and_interpolate_3d    
 def cut_and_interpolate_3d(layer               ,
                            resolution          ,
                            i                   ,
@@ -282,6 +618,7 @@ def cut_and_interpolate_3d(layer               ,
 
     return x_int,y_int,grid
 
+#%% cut_and_interpolate_2d
 def cut_and_interpolate_2d(layer               ,
                            resolution          ,
                            i                   ,
@@ -347,6 +684,7 @@ def cut_and_interpolate_2d(layer               ,
     
     return dist_prof,profile
 
+#%% in_area_s
 def in_area_s(acs,x,y,g):
     '''
     Limit the size of the originial dataset to make interpolation easier
@@ -376,6 +714,7 @@ def in_area_s(acs,x,y,g):
     
     return x_s,y_s,grid_s
 
+#%% fix_surface_height
 def fix_surface_height(surface,x_data,y_data,data):
     '''
     Set the height of the 3d surface to the correct interface depth
@@ -399,6 +738,7 @@ def fix_surface_height(surface,x_data,y_data,data):
     
     return surface
 
+#%% compare_to_plane
 def compare_to_plane(x,y,data,grid_xy,tree):
     '''
     check the height of the plane of the three neighbouring points for the cell center at x,y(,z)
@@ -440,7 +780,7 @@ def compare_to_plane(x,y,data,grid_xy,tree):
 
     return F
 
-
+#%% define_profile
 def define_profile(x_profile,y_profile,dist_int):
     '''
     generate the coordinate profile to a given resolution

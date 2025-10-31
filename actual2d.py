@@ -64,6 +64,8 @@ k1 = 2.7
 k2 = 3.5
 hp_0 = 0.000001
 
+tc = [k0,k1,k2]
+
 #%%___cut data to size & interpolate along profile____
 
 data_list = []
@@ -111,70 +113,14 @@ plt.show()
 mesh,line_list = gepy.build_world_2d(data_list, profile_coord, area=None,
                                       layers=layers, do_sediments=do_sediments)
 
+
+
+
+
 #%%___apply correct markers to cells and nodes________
 
-# create lists for temperature and heat production that are to be applied to the nodes
-force = np.zeros(mesh.nodeCount())
-force_marker = np.zeros(mesh.nodeCount())
-Tnode = []
-for i, node in enumerate(mesh.nodes()):
-    x,y,z = node.pos()
-    
-    idx_t_0,idx_t_1 = np.argsort(np.abs(dist_prof_t-x))[0],np.argsort(np.abs(dist_prof_t-x))[1]
-    
-    m_s = (profile_sed_depth[idx_t_0]-profile_sed_depth[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    y_s = m_s * (x-dist_prof_t[idx_t_1]) + profile_sed_depth[idx_t_1] 
-    
-    m_t = (profile_topo[idx_t_0]-profile_topo[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    y_t = m_t * (x-dist_prof_t[idx_t_1]) + profile_topo[idx_t_1] 
-    
-    idx_tA = np.argmin(np.abs(dist_prof_t-x))
-    idx_bA = np.argmin(np.abs(dist_prof_m-x))
-    
-    idx_t = np.argmin(np.abs(dist_prof_t-x))
-    idx_l = np.argmin(np.abs(dist_prof_l-x))
-    
-    idx_A = np.argmin(np.abs(dist_prof_t-x))
-    
-    if y >= -profile_moho[idx_bA] and y <= y_s:
-        force[i] = profile_A_for_topo[idx_A]
-        # force[i] = 0.000001
-        force_marker[i] = node.marker()
-    else:
-        force[i] = 0
-    
-    if y >= y_t:
-        T0fornode = [node.id(),0]
-        Tnode.append(T0fornode)
-    if y <= -profile_lab[idx_l]:
-        TLABfornode = [node.id(),1315]
-        Tnode.append(TLABfornode)
-
-# apply correct marker to the cells
-crust_cells = []
-crust_nodes = []
-for cell in mesh.cells():
-    center = cell.center()
-    x, y, z = center.x(), center.y(), center.z()
-    
-    idx_t_0,idx_t_1 = np.argsort(np.abs(dist_prof_t-x))[0],np.argsort(np.abs(dist_prof_t-x))[1]
-    
-    m_t = (profile_topo[idx_t_0]-profile_topo[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    m_s = (profile_sed_depth[idx_t_0]-profile_sed_depth[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    y_t = m_t * (x-dist_prof_t[idx_t_1]) + profile_topo[idx_t_1] 
-    y_s = m_s * (x-dist_prof_t[idx_t_1]) + profile_sed_depth[idx_t_1] 
-    
-    idx_m = np.argmin(np.abs(dist_prof_m-x))
-    idx_l = np.argmin(np.abs(dist_prof_l-x))
-    
-    if y < y_t and y > y_s:
-        cell.setMarker(5)
-    if y < y_s:
-        cell.setMarker(6)
-    if y < -profile_moho[idx_m]:
-        cell.setMarker(7)
-    if y < -profile_lab[idx_l]:
-        cell.setMarker(8)
+mesh,force = gepy.assign_markers_2d(data_list, mesh,
+                         layers=layers, do_sediments=do_sediments, do_hp=do_hp, hp_0=hp_0, tc=tc)
     
 # #%% quick world plot to check
 
