@@ -1,13 +1,13 @@
 """
-Georg HÃ¼ttner - October 2024
+Georg Hüttner - November 2025
 
-One of probably a bunch of scripts to import dumbass functions
+pyGIM_3DGHF functions that rely on pyGIMLi and its meshtools
 """
 
 import pygimli as pg
 import pygimli.meshtools as mt
 import numpy as np
-from scipy.interpolate import griddata, RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator
 from scipy.spatial import KDTree
 
 km = 1000
@@ -62,68 +62,15 @@ def calc_ghf(T,
     
     return shf
     
-'''
-3D:
-    
-    topcoord = []
-    for i in range(len(x_int_t)):
-        for j in range(len(y_int_t)):
-            topcoord.append([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[j,i]-5)/km])
-
-    gradientTop = pg.solver.grad(mesh, T, topcoord)
-
-    geology_list = []
-
-    shf = np.zeros(len(gradientTop))
-    for i in range(len(gradientTop)):
-        point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
-        cell = mesh.findCell(point)
-        geology = cell.marker()
-        geology_list.append(geology)
-        if geology == 5:   
-            shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
-        elif geology == 4:
-            shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
-
-    shf_3D = np.transpose(np.reshape(shf,(len(x_int_t),len(y_int_t))))
-    gradientTop_rs = np.reshape(gradientTop[:,2],(len(x_int_t),len(y_int_t)))
-    
-
-2D:
-    
-T_list = [T[i] for i in range(len(T))]
-
-# similarly to the 3D case, I'll probably want to select other locations for the measurement points
-topcoord = []
-for i in range(len(dist_prof_t)):
-    topcoord.append([dist_prof_t[i],profile_topo[i]-1,0])
-
-gradientTop = pg.solver.grad(mesh, T, topcoord)
-
-geology_list = []
-shf = np.zeros(len(gradientTop))
-for i in range(len(gradientTop)):
-    point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
-    cell = mesh.findCell(point)
-    geology = cell.marker()
-    geology_list.append(geology)
-    if geology == 6:   
-        shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
-    elif geology == 5:
-        shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
-
-shf_2D = shf*1000 
-
-'''
-    
-    
 #%% calc_temp
 def calc_temp(mesh,
               dimension,
-              force,
               layers,
+              force = None,
               do_sediments = False,
+              do_hp = False,
               tc = None,
+              hp_0 = None,
               Tbound = None
               ):
     '''
@@ -136,8 +83,9 @@ def calc_temp(mesh,
     force :        nodal heat production values from assign_markers_
     layers :       number of layers
     do_sediments : is a sediment layer present?
-    do_hp :        is a heat production distribution provided?
+    do_hp :        REF/CONST/NONE - how to deal with heat production
     tc :           list of thermal conductivities
+    hp_0 :         which CONST value to take for heat production
     Tbound :       optional costum boundary conditions for [T_LAB , T_surface]
 
     Returns
@@ -150,53 +98,92 @@ def calc_temp(mesh,
         T_LAB = 1315
         T_surface = 0
     else:
-        T_LAB = T_bound[0]
-        T_surface = T_bound[1]
+        T_LAB = Tbound[0]
+        T_surface = Tbound[1]
     
     if dimension == '3D':
         if layers == 2:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={1: 1.0*km, 4: tc[0]*km, 7: 4.0*km},
-                                            f=force*km*km*km,
-                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 7: 4.0*km},
+                                                  f=force*km*km*km,
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 7: 4.0*km},
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
         elif do_sediments and layers == 3:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={1: 1.0*km, 4: tc[0]*km, 6: tc[1]*km, 7: 4.0*km},
-                                            f=force*km*km*km,
-                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 5: tc[1]*km, 7: 4.0*km},
+                                                  f=force*km*km*km,
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 5: tc[1]*km, 7: 4.0*km},
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
         elif not do_sediments and layers == 3:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={1: 1.0*km, 4: tc[0]*km, 6: tc[1]*km, 7: 4.0*km},
-                                            f=force*km*km*km,
-                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 6: tc[1]*km, 7: 4.0*km},
+                                                  f=force*km*km*km,
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 6: tc[1]*km, 7: 4.0*km},
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
         elif do_sediments and layers == 4:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={1: 1.0*km, 4: tc[0]*km, 5: tc[1]*km, 6: tc[2]*km, 7: 4.0*km},
-                                            f=force*km*km*km,
-                                            bc={'Dirichlet': {7: T_LAB, 4: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 5: tc[1]*km, 6: tc[2]*km, 7: 4.0*km},
+                                                  f=force*km*km*km,
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={1: 1.0*km, 4: tc[0]*km, 5: tc[1]*km, 6: tc[2]*km, 7: 4.0*km},
+                                                  bc={'Dirichlet': {10: T_LAB, 7: T_surface}},verbose=True)
     elif dimension == '2D':
         if layers == 2:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={0: 1.5, 5: tc[0], 8: 4.0},
-                                            f=force,
-                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 8: 4.0},
+                                                  f=force,
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 8: 4.0},
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
         elif do_sediments and layers == 3:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={0: 1.5, 5: tc[0], 6: tc[1], 8: 4.0},
-                                            f=force,
-                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 6: tc[1], 8: 4.0},
+                                                  f=force,
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 6: tc[1], 8: 4.0},
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
         elif not do_sediments and layers == 3:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={0: 1.5, 5: tc[0], 7: tc[1], 8: 4.0},
-                                            f=force,
-                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 7: tc[1], 8: 4.0},
+                                                  f=force,
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            elif do_hp == 'NONE':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 7: tc[1], 8: 4.0},
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
         elif do_sediments and layers == 4:
-            T = pg.solver.solveFiniteElements(mesh,
-                                            a={0: 1.5, 5: tc[0], 6: tc[1], 7: tc[2], 8: 4.0},
-                                            f=force,
-                                            bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            if do_hp == 'REF' or do_hp == 'CONST':
+                T = pg.solver.solveFiniteElements(mesh,
+                                                  a={0: 1.5, 5: tc[0], 6: tc[1], 7: tc[2], 8: 4.0},
+                                                  f=force,
+                                                  bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
+            elif do_hp == 'NONE':T = pg.solver.solveFiniteElements(mesh,
+                                              a={0: 1.5, 5: tc[0], 6: tc[1], 7: tc[2], 8: 4.0},
+                                              bc={'Dirichlet': {8: T_LAB, 5: T_surface}},verbose=True)
     else:
-        print('Please give dimension')
+        print('Please give correct dimension')
     
     return T
 
@@ -218,38 +205,41 @@ def assign_markers_3d(data_list,
     mesh :         pygimli mesh from build_world
     layers :       number of layers
     do_sediments : is a sediment layer present?
-    do_hp :        is a heat production distribution provided?
-    hp_0 :         which value to take in case no hp is provided
-    tc :           list of thermal conductivities 
+    do_hp :        REF/CONST/NONE - how to deal with heat production
+    tc :           list of thermal conductivities
+    hp_0 :         which CONST value to take for heat production
 
     Returns
     -------
     mesh : mesh with assigned markers and parameters
     '''
     
-    grid_xy_t = np.array(list(zip(data_list[0][0].flatten()/km,data_list[0][1].flatten()/km)))
+    x_int_t, y_int_t, grid = data_list[0]
+    xi_t, yi_t = np.meshgrid(x_int_t/km, y_int_t/km)
+    grid_xy_t = np.column_stack((xi_t.ravel(), yi_t.ravel()))
     tree_t = KDTree(grid_xy_t)
     
     if layers == 2:
-        grid_xy_l = np.array(list(zip(data_list[1][0].flatten()/km,data_list[1][1].flatten()/km)))
+        x_int_l, y_int_l, grid = data_list[1]
+        xi_l, yi_l = np.meshgrid(x_int_l/km, y_int_l/km)
+        grid_xy_l = np.column_stack((xi_l.ravel(), yi_l.ravel()))
         tree_l = KDTree(grid_xy_l)
         
         force = np.zeros(mesh.nodeCount())
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             
             x,y,z = node.pos()
             z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
             z_lab = compare_to_plane(x,y,-data_list[1][2],grid_xy_l,tree_l)
             
-            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y))
             if z >= z_lab and z <= z_topo:
-                if hp_0 is not None:
-                    force[i] = hp_0
-                else:
+                if do_hp == 'REF':
                     force[i] = data_list[2][2][idy_A,idx_A]
+                elif do_hp == 'CONST':
+                    force[i] = hp_0
             else:
                 force[i] = 0
             
@@ -266,26 +256,27 @@ def assign_markers_3d(data_list,
                 cell.setMarker(7)
         
     elif do_sediments and layers == 3:
-        grid_xy_l = np.array(list(zip(data_list[2][0].flatten()/km,data_list[2][1].flatten()/km)))
+        x_int_l, y_int_l, grid = data_list[2]
+        xi_l, yi_l = np.meshgrid(x_int_l/km, y_int_l/km)
+        grid_xy_l = np.column_stack((xi_l.ravel(), yi_l.ravel()))
         tree_l = KDTree(grid_xy_l)
         
         force = np.zeros(mesh.nodeCount())
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             
             x,y,z = node.pos()
             z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
             z_sed = compare_to_plane(x,y,(data_list[0][2]-data_list[1][2]),grid_xy_t,tree_t)
             z_lab = compare_to_plane(x,y,-data_list[2][2],grid_xy_l,tree_l)
             
-            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y))
             if z >= z_lab and z <= z_sed:
-                if hp_0 is not None:
-                    force[i] = hp_0
-                else:
+                if do_hp == 'REF':
                     force[i] = data_list[3][2][idy_A,idx_A]
+                elif do_hp == 'CONST':
+                    force[i] = hp_0
             else:
                 force[i] = 0
             
@@ -305,28 +296,31 @@ def assign_markers_3d(data_list,
                 cell.setMarker(7)
         
     elif not do_sediments and layers == 3:
-        grid_xy_m = np.array(list(zip(data_list[1][0].flatten()/km,data_list[1][1].flatten()/km)))
+        x_int_m, y_int_m, grid = data_list[1]
+        xi_m, yi_m = np.meshgrid(x_int_m/km, y_int_m/km)
+        grid_xy_m = np.column_stack((xi_m.ravel(), yi_m.ravel()))
         tree_m = KDTree(grid_xy_m)
-        grid_xy_l = np.array(list(zip(data_list[2][0].flatten()/km,data_list[2][1].flatten()/km)))
+        x_int_l, y_int_l, grid = data_list[2]
+        xi_l, yi_l = np.meshgrid(x_int_l/km, y_int_l/km)
+        grid_xy_l = np.column_stack((xi_l.ravel(), yi_l.ravel()))
         tree_l = KDTree(grid_xy_l)
         
         force = np.zeros(mesh.nodeCount())
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             
             x,y,z = node.pos()
             z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
             z_moho = compare_to_plane(x,y,-data_list[1][2],grid_xy_m,tree_m)
             z_lab = compare_to_plane(x,y,-data_list[2][2],grid_xy_l,tree_l)
             
-            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y))
             if z >= z_moho and z <= z_topo:
-                if hp_0 is not None:
-                    force[i] = hp_0
-                else:
+                if do_hp == 'REF':
                     force[i] = data_list[3][2][idy_A,idx_A]
+                elif do_hp == 'CONST':
+                    force[i] = hp_0
             else:
                 force[i] = 0
             
@@ -346,16 +340,19 @@ def assign_markers_3d(data_list,
                 cell.setMarker(7)
         
     elif do_sediments and layers == 4:
-        grid_xy_m = np.array(list(zip(data_list[2][0].flatten()/km,data_list[2][1].flatten()/km)))
+        x_int_m, y_int_m, grid = data_list[2]
+        xi_m, yi_m = np.meshgrid(x_int_m/km, y_int_m/km)
+        grid_xy_m = np.column_stack((xi_m.ravel(), yi_m.ravel()))
         tree_m = KDTree(grid_xy_m)
-        grid_xy_l = np.array(list(zip(data_list[3][0].flatten()/km,data_list[3][1].flatten()/km)))
+        x_int_l, y_int_l, grid = data_list[3]
+        xi_l, yi_l = np.meshgrid(x_int_l/km, y_int_l/km)
+        grid_xy_l = np.column_stack((xi_l.ravel(), yi_l.ravel()))
         tree_l = KDTree(grid_xy_l)
     
         force = np.zeros(mesh.nodeCount())
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             
             x,y,z = node.pos()
             z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
@@ -363,21 +360,21 @@ def assign_markers_3d(data_list,
             z_moho = compare_to_plane(x,y,-data_list[2][2],grid_xy_m,tree_m)
             z_lab = compare_to_plane(x,y,-data_list[3][2],grid_xy_l,tree_l)
             
-            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y)) # potential for error with x_int_t
+            idx_A,idy_A = np.argmin(np.abs(np.unique(data_list[0][0])/km-x)),np.argmin(np.abs(np.unique(data_list[0][1])/km-y))
             if z >= z_moho and z <= z_sed:
-                if hp_0 is not None:
-                    force[i] = hp_0
-                else:
+                if do_hp == 'REF':
                     force[i] = data_list[4][2][idy_A,idx_A]
+                elif do_hp == 'CONST':
+                    force[i] = hp_0
             else:
                 force[i] = 0
-            
+        
         for i,cell in enumerate(mesh.cells()): # apply geology markers to cells
             center = cell.center()
             x, y, z = center.x(), center.y(), center.z()
             
             z_topo = compare_to_plane(x,y,data_list[0][2],grid_xy_t,tree_t)
-            z_sed = compare_to_plane(x,y,(data_list[1][2]-data_list[1][2]),grid_xy_t,tree_t)
+            z_sed = compare_to_plane(x,y,(data_list[0][2]-data_list[1][2]),grid_xy_t,tree_t)
             z_moho = compare_to_plane(x,y,-data_list[2][2],grid_xy_m,tree_m)
             z_lab = compare_to_plane(x,y,-data_list[3][2],grid_xy_l,tree_l)
             
@@ -389,8 +386,10 @@ def assign_markers_3d(data_list,
                 cell.setMarker(6)
             if z < z_lab:
                 cell.setMarker(7)
-    
-    return mesh,force
+    if do_hp == 'NONE':
+        return mesh,None
+    else:         
+        return mesh,force
 
 #%% assign_markers_2d
 def assign_markers_2d(data_list,
@@ -423,9 +422,8 @@ def assign_markers_2d(data_list,
     
     if layers == 2:
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             x,y,z = node.pos()
             
             idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
@@ -434,13 +432,13 @@ def assign_markers_2d(data_list,
             y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
             
             idx_l = np.argmin(np.abs(data_list[1][0]-x))
-            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            idx_A = np.argmin(np.abs(data_list[2][0]-x))
             
             if y >= -data_list[1][1][idx_l] and y <= y_t:
-                if hp_0 is not None:
+                if do_hp == 'REF':
+                    force[i] = data_list[2][1][idx_A]
+                elif do_hp == 'CONST':
                     force[i] = hp_0
-                else:
-                    force[i] = data_list[2][0][idx_A]
             else:
                 force[i] = 0
     
@@ -462,9 +460,8 @@ def assign_markers_2d(data_list,
         
     elif do_sediments and layers == 3:
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             x,y,z = node.pos()
             
             idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
@@ -476,13 +473,13 @@ def assign_markers_2d(data_list,
             y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
             
             idx_l = np.argmin(np.abs(data_list[2][0]-x))
-            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            idx_A = np.argmin(np.abs(data_list[3][0]-x))
             
             if y >= -data_list[2][1][idx_l] and y <= y_s:
-                if hp_0 is not None:
+                if do_hp == 'REF':
+                    force[i] = data_list[3][1][idx_A]
+                elif do_hp == 'CONST':
                     force[i] = hp_0
-                else:
-                    force[i] = data_list[3][0][idx_A]
             else:
                 force[i] = 0
     
@@ -493,9 +490,9 @@ def assign_markers_2d(data_list,
             idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
             
             m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
-            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[1][0][idx_t_0]-data_list[1][0][idx_t_1])
+            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
             y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
-            y_s = m_s * (x-data_list[1][0][idx_t_1]) + data_list[1][1][idx_t_1] 
+            y_s = m_s * (x-data_list[0][0][idx_t_1]) + data_list[1][1][idx_t_1] 
             
             idx_l = np.argmin(np.abs(data_list[2][0]-x))
             
@@ -508,9 +505,8 @@ def assign_markers_2d(data_list,
         
     elif not do_sediments and layers == 3:
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             x,y,z = node.pos()
             
             idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
@@ -518,15 +514,15 @@ def assign_markers_2d(data_list,
             m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
             y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
             
-            idx_bA = np.argmin(np.abs(data_list[2][0]-x))
-            idx_l = np.argmin(np.abs(data_list[3][0]-x))
-            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            idx_bA = np.argmin(np.abs(data_list[0][0]-x))
+            idx_l = np.argmin(np.abs(data_list[2][0]-x))
+            idx_A = np.argmin(np.abs(data_list[3][0]-x))
             
             if y >= -data_list[1][1][idx_bA] and y <= y_t:
-                if hp_0 is not None:
+                if do_hp == 'REF':
+                    force[i] = data_list[3][1][idx_A]
+                elif do_hp == 'CONST':
                     force[i] = hp_0
-                else:
-                    force[i] = data_list[3][0][idx_A]
             else:
                 force[i] = 0
     
@@ -551,9 +547,8 @@ def assign_markers_2d(data_list,
         
     elif do_sediments and layers == 4:
         for i, node in enumerate(mesh.nodes()): # apply heat production values to nodes
-            if not do_hp:
-                force[i] = 0
-                continue
+            if do_hp == 'NONE':
+                break
             x,y,z = node.pos()
             
             idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
@@ -566,13 +561,13 @@ def assign_markers_2d(data_list,
             
             idx_bA = np.argmin(np.abs(data_list[2][0]-x))
             idx_l = np.argmin(np.abs(data_list[3][0]-x))
-            idx_A = np.argmin(np.abs(data_list[0][0]-x))
+            idx_A = np.argmin(np.abs(data_list[4][0]-x))
             
             if y >= -data_list[2][1][idx_bA] and y <= y_s:
-                if hp_0 is not None:
+                if do_hp == 'REF':
+                    force[i] = data_list[4][1][idx_A]
+                elif do_hp == 'CONST':
                     force[i] = hp_0
-                else:
-                    force[i] = data_list[4][0][idx_A]
             else:
                 force[i] = 0
     
@@ -583,9 +578,9 @@ def assign_markers_2d(data_list,
             idx_t_0,idx_t_1 = np.argsort(np.abs(data_list[0][0]-x))[0],np.argsort(np.abs(data_list[0][0]-x))[1]
             
             m_t = (data_list[0][1][idx_t_0]-data_list[0][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
-            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[1][0][idx_t_0]-data_list[1][0][idx_t_1])
+            m_s = (data_list[1][1][idx_t_0]-data_list[1][1][idx_t_1])/(data_list[0][0][idx_t_0]-data_list[0][0][idx_t_1])
             y_t = m_t * (x-data_list[0][0][idx_t_1]) + data_list[0][1][idx_t_1] 
-            y_s = m_s * (x-data_list[1][0][idx_t_1]) + data_list[1][1][idx_t_1] 
+            y_s = m_s * (x-data_list[0][0][idx_t_1]) + data_list[1][1][idx_t_1] 
             
             idx_m = np.argmin(np.abs(data_list[2][0]-x))
             idx_l = np.argmin(np.abs(data_list[3][0]-x))
@@ -599,13 +594,16 @@ def assign_markers_2d(data_list,
             if y < -data_list[3][1][idx_l]:
                 cell.setMarker(8)
     
-    return mesh,force
+    if do_hp == 'NONE':
+        return mesh,None
+    else:         
+        return mesh,force
 
 #%% build_world_2d
 def build_world_2d(data_list          ,
                   profile_coord       ,
-                  area = None         ,
                   layers       ,
+                  area = None         ,
                   do_sediments = False          
                   ):
     '''
@@ -634,7 +632,6 @@ def build_world_2d(data_list          ,
     line_list = []
     
     topo_line = mt.createPolygon([[a,b] for a,b in zip(data_list[0][0],data_list[0][1])],marker = 5,boundaryMarker = 5,isClosed=False)
-    line_list.append(topo_line)
     if layers == 2:
         lab_line = mt.createPolygon([[a,b] for a,b in zip(data_list[1][0],-data_list[1][1])],marker = 8,boundaryMarker = 8,isClosed=False)
         line_list.append(lab_line)
@@ -644,17 +641,18 @@ def build_world_2d(data_list          ,
         line_list.append(sed_line)
         line_list.append(lab_line)
     elif not do_sediments and layers == 3:
-        moho_line = mt.createPolygon([[a,b] for a,b in zip(data_list[1][0],data_list[1][1])],marker = 7,boundaryMarker = 6,isClosed=False) 
+        moho_line = mt.createPolygon([[a,b] for a,b in zip(data_list[1][0],-data_list[1][1])],marker = 7,boundaryMarker = 6,isClosed=False) 
         lab_line = mt.createPolygon([[a,b] for a,b in zip(data_list[2][0],-data_list[2][1])],marker = 8,boundaryMarker = 8,isClosed=False)
         line_list.append(moho_line)
         line_list.append(lab_line)
     elif do_sediments and layers == 4:
-        sed_line = mt.createPolygon([[a,b] for a,b in zip(data_list[1][0],data_list[1][1])],marker = 6,boundaryMarker = 6,isClosed=False)
+        sed_line = mt.createPolygon([[a,b] for a,b in zip(data_list[0][0],data_list[1][1])],marker = 6,boundaryMarker = 6,isClosed=False)
         moho_line = mt.createPolygon([[a,b] for a,b in zip(data_list[2][0],-data_list[2][1])],marker = 7,boundaryMarker = 7,isClosed=False)
         lab_line = mt.createPolygon([[a,b] for a,b in zip(data_list[3][0],-data_list[3][1])],marker = 8,boundaryMarker = 8,isClosed=False)
         line_list.append(sed_line)
         line_list.append(moho_line)
         line_list.append(lab_line)
+    line_list.append(topo_line)
     
     for i in line_list:
         world = world + i
@@ -669,8 +667,8 @@ def build_world_2d(data_list          ,
 #%% build_world_3d
 def build_world_3d(data_list          ,
                   area_coords         ,
-                  area = None         ,
                   layers       ,
+                  area = None         ,
                   do_sediments = False,
                   border = None       
                   ):
@@ -709,44 +707,64 @@ def build_world_3d(data_list          ,
         mesh_topo = mt.createMesh2D(data_list[0][0]/km,data_list[0][1]/km)
         surface_topo = mt.createSurface(mesh_topo)
         surface_topo = fix_surface_height(surface_topo, data_list[0][0]/km,data_list[0][1]/km, data_list[0][2]/km)
+        for boundary in surface_topo.boundaries():
+            boundary.setMarker(7)
         layer_list.append(surface_topo)
-    else:
-        print("wrong do_sediments input")
     
-    if layers == 3 and not do_sediments:
+    if layers == 2:
+        mesh_lab = mt.createMesh2D(data_list[1][0]/km,data_list[1][1]/km)
+        surface_lab = mt.createSurface(mesh_lab)
+        surface_lab = fix_surface_height(surface_lab, data_list[1][0]/km,data_list[1][1]/km, -data_list[1][2]/km)
+        layer_list.append(surface_lab)
+        for boundary in surface_lab.boundaries():
+            boundary.setMarker(10)
+        layer_list.append(surface_lab)
+    elif layers == 3 and not do_sediments:
         mesh_moho = mt.createMesh2D(data_list[1][0]/km,data_list[1][1]/km)
         surface_moho = mt.createSurface(mesh_moho)
         surface_moho = fix_surface_height(surface_moho, data_list[1][0]/km,data_list[1][1]/km, -data_list[1][2]/km)
+        for boundary in surface_moho.boundaries():
+            boundary.setMarker(9)
         layer_list.append(surface_moho)
     
         mesh_lab = mt.createMesh2D(data_list[2][0]/km,data_list[2][1]/km)
         surface_lab = mt.createSurface(mesh_lab)
         surface_lab = fix_surface_height(surface_lab, data_list[2][0]/km,data_list[2][1]/km, -data_list[2][2]/km)
+        for boundary in surface_lab.boundaries():
+            boundary.setMarker(10)
         layer_list.append(surface_lab)
     elif layers == 3 and do_sediments:
         mesh_lab = mt.createMesh2D(data_list[2][0]/km,data_list[2][1]/km)
         surface_lab = mt.createSurface(mesh_lab)
         surface_lab = fix_surface_height(surface_lab, data_list[2][0]/km,data_list[2][1]/km, -data_list[2][2]/km)
+        for boundary in surface_lab.boundaries():
+            boundary.setMarker(10)
         layer_list.append(surface_lab)
-    else:
-        print("wrong do_sediments input")
-    
-    if layers == 4:
+    elif layers == 4:
         mesh_moho = mt.createMesh2D(data_list[2][0]/km,data_list[2][1]/km)
         surface_moho = mt.createSurface(mesh_moho)
         surface_moho = fix_surface_height(surface_moho, data_list[2][0]/km,data_list[2][1]/km, -data_list[2][2]/km)
+        for boundary in surface_moho.boundaries():
+            boundary.setMarker(9)
         layer_list.append(surface_moho)
     
         mesh_lab = mt.createMesh2D(data_list[3][0]/km,data_list[3][1]/km)
         surface_lab = mt.createSurface(mesh_lab)
         surface_lab = fix_surface_height(surface_lab, data_list[3][0]/km,data_list[3][1]/km, -data_list[3][2]/km)
+        for boundary in surface_lab.boundaries():
+            boundary.setMarker(10)
         layer_list.append(surface_lab)
+    else:
+        print('something went wrong with the input')
     
     geometry = world
     for i in layer_list:
         geometry = geometry + i
     
-    mesh = mt.createMesh(geometry,quality=34,area=area)
+    if area == None:
+        mesh = mt.createMesh(geometry,quality=34)
+    else:
+        mesh = mt.createMesh(geometry,quality=34,area=area)
 
     return mesh,layer_list
 
@@ -781,17 +799,28 @@ def cut_and_interpolate_3d(layer               ,
     y_int : gridded y coordinate of data grid
     grid : data grid
     '''
-    
+
+    if layer == 'CONST' and i==layers:
+        x_int,y_int = np.arange(area_coords[0],area_coords[1]+resolution[0],resolution[0]),np.arange(area_coords[3],area_coords[2]+resolution[0],resolution[0])
+        xi_int,yi_int = np.meshgrid(x_int,y_int)
+        grid = np.full(np.shape(yi_int),hp_0)
+        
+        return x_int,y_int,grid
+
     data,xi,yi = layer["data"],layer["x"],layer["y"]
     
     xi_s,yi_s,data_s = in_area_s(area_coords,xi,yi,data)
-    xii_s,yii_s = np.meshgrid(xi_s,yi_s)
     x_int,y_int = np.arange(area_coords[0],area_coords[1]+resolution[i],resolution[i]),np.arange(area_coords[3],area_coords[2]+resolution[i],resolution[i])
     xi_int,yi_int = np.meshgrid(x_int,y_int)
 
-    if do_hp and layers == i:
-        grid_temp  = griddata((xii_s.flatten(), yii_s.flatten()), data.flatten(), (xi_int,yi_int),fill_value=hp_0)
-        interp = RegularGridInterpolator((x_int,y_int),grid_temp)
+    if do_sediments and i==1:
+        interp = RegularGridInterpolator((np.unique(xi_s),np.unique(yi_s)),data_s)
+        x_int_t,y_int_t = np.arange(area_coords[0],area_coords[1]+resolution[0],resolution[0]),np.arange(area_coords[3],area_coords[2]+resolution[0],resolution[0])
+        xi_int_t,yi_int_t = np.meshgrid(x_int_t,y_int_t)
+        grid = interp((xi_int_t,yi_int_t))
+    elif (do_hp=='REF' or do_hp=='CONST') and layers == i:
+        #interp = RegularGridInterpolator((x_int,y_int),data_s)
+        interp = RegularGridInterpolator((np.unique(xi_s),np.unique(yi_s)),data_s)
         x_int_t,y_int_t = np.arange(area_coords[0],area_coords[1]+resolution[0],resolution[0]),np.arange(area_coords[3],area_coords[2]+resolution[0],resolution[0])
         xi_int_t,yi_int_t = np.meshgrid(x_int_t,y_int_t)
         grid = interp((xi_int_t,yi_int_t))
@@ -838,6 +867,14 @@ def cut_and_interpolate_2d(layer               ,
     profile : data along profile
     '''
     
+    if layer == 'CONST' and i==layers:
+        x_profile,y_profile = (profile_coord[0],profile_coord[1])
+        x_int, y_int, dist_prof = define_profile(x_profile, y_profile, resolution[0])
+        dist_prof = np.round(dist_prof)
+        profile = np.full(np.shape(dist_prof),hp_0)
+        
+        return dist_prof,profile
+    
     data,xi,yi = layer["data"],layer["x"],layer["y"]
     
     x_profile,y_profile = (profile_coord[0],profile_coord[1])
@@ -856,7 +893,7 @@ def cut_and_interpolate_2d(layer               ,
         dist_prof_t = np.round(dist_prof_t)
         profile = np.interp(dist_prof_t,dist_prof,profile)
         profile = np.round(profile,decimals=-1)
-    elif do_sediments and i==layers:
+    elif do_hp == 'REF' and i==layers:
         x_int_t, y_int_t, dist_prof_t = define_profile(x_profile, y_profile, resolution[0])
         interp_func = RegularGridInterpolator((yvals,xvals),np.asarray(data))
         profile = interp_func((y_int,x_int),method="linear").tolist()
@@ -866,9 +903,6 @@ def cut_and_interpolate_2d(layer               ,
         dist_prof = np.round(dist_prof)
         profile = np.interp(dist_prof_t,dist_prof,profile)
         profile = np.round(profile,decimals=-1)
-    
-    #if not do_hp:
-     # implement the no hp case   
     
     return dist_prof,profile
 
@@ -949,7 +983,7 @@ def compare_to_plane(x,y,data,grid_xy,tree):
     
     distances,indices = tree.query([x,y],k=3)
     nearest_points = grid_xy[indices]
-    height_data = np.transpose(data).flatten('F')[indices]/km
+    height_data = data.flatten()[indices]/km #np.transpose(data).flatten('F')[indices]/km
 
     A = [nearest_points[0,0],nearest_points[0,1],height_data[0]]
     B = [nearest_points[1,0],nearest_points[1,1],height_data[1]]
@@ -1032,6 +1066,7 @@ def define_profile(x_profile,y_profile,dist_int):
         dist_prof = dist_prof[:-1]
     return x_int,y_int,dist_prof
 
+#%% create_sed_interface
 def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
     '''
     create the costum interface for the sediment layer, which needs to lie under the topography
@@ -1067,7 +1102,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                 triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
                 triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
                 surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                 triangles_topo.append(triangle)
                 
                 triangle = pg.Mesh(3,isGeometry=True)
@@ -1075,7 +1110,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                 triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
                 triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
                 surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                 triangles_topo.append(triangle)
                 continue
             elif zero_count == 3:
@@ -1086,7 +1121,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode([x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km],marker=9)
                     triangle.createNode([x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km],marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=8)
                     triangles_sed.append(triangle)
                     
                     # topo
@@ -1095,7 +1130,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
                     triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     
                     triangle = pg.Mesh(3,isGeometry=True)
@@ -1103,7 +1138,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     continue
                 elif grid_sed[i+1,j] != 0:
@@ -1113,7 +1148,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km],marker=9)
                     triangle.createNode([x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km],marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=8)
                     triangles_sed.append(triangle)
                     
                     # topo
@@ -1122,7 +1157,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     
                     triangle = pg.Mesh(3,isGeometry=True)
@@ -1130,7 +1165,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     continue
                 elif grid_sed[i,j+1] != 0:
@@ -1140,7 +1175,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode([x_int_t[i]/km,y_int_t[j]/km,(grid_topo[i,j]-grid_sed[i,j])/km],marker=9)
                     triangle.createNode([x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km],marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=8)
                     triangles_sed.append(triangle)
                     
                     # topo
@@ -1149,7 +1184,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     
                     triangle = pg.Mesh(3,isGeometry=True)
@@ -1157,7 +1192,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i]/km,y_int_t[j]/km,grid_topo[i,j]/km,marker=9)
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     continue
                 elif grid_sed[i+1,j+1] != 0:
@@ -1167,7 +1202,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode([x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km],marker=9)
                     triangle.createNode([x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km],marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=8)
                     triangles_sed.append(triangle)
                     
                     # topo
@@ -1176,7 +1211,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=9)
                     triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     
                     triangle = pg.Mesh(3,isGeometry=True)
@@ -1184,7 +1219,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                     triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=9)
                     triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
                     surf = [0,1,2]
-                    triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                    triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                     triangles_topo.append(triangle)
                     continue
             else:
@@ -1194,7 +1229,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                 triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,(grid_topo[i+1,j]-grid_sed[i+1,j])/km,marker=5)
                 triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km,marker=5)
                 surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+                triangle.createPolygonFace(triangle.nodes(surf),marker=8)
                 triangles_sed.append(triangle)
                 
                 triangle = pg.Mesh(3,isGeometry=True)
@@ -1202,7 +1237,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                 triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,(grid_topo[i,j+1]-grid_sed[i,j+1])/km,marker=5)
                 triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,(grid_topo[i+1,j+1]-grid_sed[i+1,j+1])/km,marker=5)
                 surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=5)
+                triangle.createPolygonFace(triangle.nodes(surf),marker=8)
                 triangles_sed.append(triangle)
                 
                 # topo
@@ -1211,7 +1246,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                 triangle.createNode(x_int_t[i+1]/km,y_int_t[j]/km,grid_topo[i+1,j]/km,marker=4)
                 triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
                 surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                 triangles_topo.append(triangle)
                 
                 triangle = pg.Mesh(3,isGeometry=True)
@@ -1219,7 +1254,7 @@ def create_sed_interface(x_int_t,y_int_t,grid_topo,grid_sed):
                 triangle.createNode(x_int_t[i]/km,y_int_t[j+1]/km,grid_topo[i,j+1]/km,marker=4)
                 triangle.createNode(x_int_t[i+1]/km,y_int_t[j+1]/km,grid_topo[i+1,j+1]/km,marker=4)
                 surf = [0,1,2]
-                triangle.createPolygonFace(triangle.nodes(surf),marker=4)
+                triangle.createPolygonFace(triangle.nodes(surf),marker=7)
                 triangles_topo.append(triangle)
                 continue
     
