@@ -6,7 +6,6 @@ interfaces. Based on this a surface geothermal heat flow can be calculated.
 """
 
 import pygimli as pg
-import pygimli.meshtools as mt
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -14,168 +13,74 @@ import matplotlib.cm as cm
 from matplotlib import ticker
 import cartopy.crs as ccrs
 from cartopy.mpl.ticker import (LongitudeFormatter, LatitudeFormatter)
-from scipy.interpolate import griddata,RegularGridInterpolator
 import datetime
 import pickle
-from scipy.stats import norm
 import gepy
 
-# test change
+#%%___General parameters______________________________
 
-
-#%% research area and params
-area_coord_s = [1300000,1400000,-275000,-375000]
+area_coords = [1300000,1400000,-275000,-375000]
 # profile_coord=([1300000,1400000],[-275000,-375000])
 
 # profile_coord=([1300000,1400000],[-320000,-300000]) # LV prof 1
 # profile_coord=([1300000,1400000],[-340000,-320000]) # LV prof 2
 profile_coord=([1325000,1365000],[-275000,-375000]) # LV prof 3
 
-# area_coord_s = [1355000,1435000,-855000,-985000] # Dome C
+# area_coords = [1355000,1435000,-855000,-985000] # Dome C
 
 # profile_coord=([1405000,1435000],[-985000,-855000]) # DC prof 1
 # profile_coord=([1360000,1415000],[-985000,-855000]) # DC prof 2
 # profile_coord=([1355000,1420000],[-920000,-985000]) # DC prof 3
 # profile_coord=([1355000,1435000],[-905000,-970000]) # DC prof 3
 # 
-# area_coord_s = [1800000,1900000,-650000,-750000] # ASB
+# area_coords = [1800000,1900000,-650000,-750000] # ASB
 
 # profile_coord=([1900000,1800000],[-650000,-750000]) # ASB prof 1
 # profile_coord=([1800000,1900000],[-750000,-650000]) # ASB prof 1
 # profile_coord=([1800000,1900000],[-700000,-700000]) # ASB prof 2
 
+#_____Layers__________________________________________
+
+layers = 4
+do_sediments = True
+do_hp = True
+
+#_____Data Input______________________________________
+
+data_input = []
+
+data_input.append(np.load("data_example/topography.npz"))
+data_input.append(np.load("data_example/Sediments.npz"))
+data_input.append(np.load("data_example/Moho.npz"))
+data_input.append(np.load("data_example/LAB.npz"))
+data_input.append(np.load("data_example/HP.npz"))
+
+data_resolution = [1000,9250,10000,10000,12500]
+
+#%%___Thermal parameters______________________________
+
 k0 = 1.5
 k1 = 2.7
 k2 = 3.5
+hp_0 = 0.000001
+# If you have input HP data: do not use hp_0 in any function.
+# If you do not have input HP data: set a hp_0 value and give it in 
 
-km = 1000
+tc = [k0,k1,k2]
 
-notes = '2d_LV_3_Tprof'
-print(notes)
+#%%___cut data to size & interpolate along profile____
 
-#%% load data and interpolate on profiles
+data_list = []
 
-data_calc,data_resolution = gepy.load_data()
+for i,layer in enumerate(data_input):
+    data = gepy.cut_and_interpolate_2d(layer, data_resolution, i, layers,area_coords,
+                                        do_sediments=do_sediments, do_hp=do_hp, hp_0=hp_0)
+    data_list.append(data)
 
-x_profile,y_profile = (profile_coord[0],profile_coord[1])
+if do_sediments:
+    data_list[1,1] = data_list[0,1]-data_list[1,1]
 
-profile_length = np.round(np.sqrt((x_profile[1]-x_profile[0])**2 + (y_profile[1]-y_profile[0])**2))
-
-x_int_t, y_int_t, dist_prof_t = gepy.define_profile(x_profile, y_profile, data_resolution[0])
-x_int_s, y_int_s, dist_prof_s = gepy.define_profile(x_profile, y_profile, data_resolution[1])
-x_int_m, y_int_m, dist_prof_m = gepy.define_profile(x_profile, y_profile, data_resolution[2])
-x_int_l, y_int_l, dist_prof_l = gepy.define_profile(x_profile, y_profile, data_resolution[3])
-
-dist_prof_t = np.round(dist_prof_t)
-dist_prof_s = np.round(dist_prof_s)
-dist_prof_m = np.round(dist_prof_m)
-dist_prof_l = np.round(dist_prof_l)
-
-xvals_t = np.unique(np.asarray(data_calc[0][0]))
-yvals_t = np.unique(np.asarray(data_calc[0][1]))
-
-xvals_s = np.unique(np.asarray(data_calc[1][0]))
-yvals_s = np.unique(np.asarray(data_calc[1][1]))
-
-xvals_m = np.unique(np.asarray(data_calc[2][0]))
-yvals_m = np.unique(np.asarray(data_calc[2][1]))
-
-xvals_l = np.unique(np.asarray(data_calc[3][0]))
-yvals_l = np.unique(np.asarray(data_calc[3][1]))
-
-interp_func = RegularGridInterpolator((yvals_t,xvals_t),np.asarray(data_calc[0][2]))
-profile_topo = interp_func((y_int_t,x_int_t),method="linear").tolist()
-profile_topo = np.round(profile_topo,decimals=3)
-
-interp_func = RegularGridInterpolator((yvals_s,xvals_s),np.asarray(data_calc[1][2]))
-profile_sed = interp_func((y_int_s,x_int_s),method="linear").tolist()
-profile_sed = np.round(profile_sed,decimals=3)
-
-interp_func = RegularGridInterpolator((yvals_m,xvals_m),np.asarray(data_calc[2][2]))
-profile_moho = interp_func((y_int_m,x_int_m),method="linear").tolist()
-profile_moho = np.round(profile_moho,decimals=3)
-
-interp_func = RegularGridInterpolator((yvals_l,xvals_l),np.asarray(data_calc[3][2]))
-profile_lab = interp_func((y_int_l,x_int_l),method="linear").tolist()
-profile_lab = np.round(profile_lab,decimals=3)
-
-profile_topo_for_sed = np.interp(dist_prof_s,dist_prof_t,profile_topo)
-profile_sed_for_topo = np.interp(dist_prof_t,dist_prof_s,profile_sed)
-profile_sed_for_topo = np.round(profile_sed_for_topo,decimals=-1)
-
-profile_moho_for_topo = np.interp(dist_prof_t,dist_prof_m,profile_moho)
-profile_lab_for_topo = np.interp(dist_prof_t,dist_prof_l,profile_lab)
-
-# heat production:
-data_HP = np.load("data/SMOS_hp.npz")
-grid_A_ws = data_HP['A_ws']
-grid_A_wo = data_HP['A_wo']
-
-xi_smos,yi_smos = data_HP['xi_smos'],data_HP['yi_smos']
-x_int_A, y_int_A, dist_prof_A = gepy.define_profile(x_profile, y_profile, 12500)
-dist_prof_A = np.round(dist_prof_A)
-xvals_A = np.unique(xi_smos)
-yvals_A = np.unique(yi_smos)
-interp_func = RegularGridInterpolator((yvals_A,xvals_A),np.asarray(grid_A_ws))
-profile_A = interp_func((y_int_A,x_int_A),method="linear").tolist()
-# profile_A = np.round(profile_A,decimals=3)
-profile_A_for_topo = np.interp(dist_prof_t,dist_prof_A,profile_A)
-
-# profile_A_norm = profile_A_for_topo/np.max(profile_A_for_topo)
-# profile_A_for_topo = profile_A_for_topo*profile_A_norm*1.5
-
-
-# single layer scheiße
-
-xi_topo_s_a2, yi_topo_s_a2, grid_topo_s_a2 = gepy.in_area_s(area_coord_s,data_calc[0][0],data_calc[0][1],data_calc[0][2])
-xi_sed_s_a2, yi_sed_s_a2, grid_sed_s_a2    = gepy.in_area_s(area_coord_s,data_calc[1][0],data_calc[1][1],data_calc[1][2])
-xi_moho_s_a2, yi_moho_s_a2, grid_moho_s_a2 = gepy.in_area_s(area_coord_s,data_calc[2][0],data_calc[2][1],data_calc[2][2])
-xi_lab_s_a2, yi_lab_s_a2, grid_lab_s_a2    = gepy.in_area_s(area_coord_s,data_calc[3][0],data_calc[3][1],data_calc[3][2])
-xii_topo_s_a2,yii_topo_s_a2 = np.meshgrid(xi_topo_s_a2,yi_topo_s_a2)
-xii_sed_s_a2,yii_sed_s_a2   = np.meshgrid(xi_sed_s_a2,yi_sed_s_a2)
-xii_moho_s_a2,yii_moho_s_a2 = np.meshgrid(xi_moho_s_a2,yi_moho_s_a2)
-xii_lab_s_a2,yii_lab_s_a2   = np.meshgrid(xi_lab_s_a2,yi_lab_s_a2)
-res_topo,res_moho,res_lab = (1000,10000,10000)
-x_int_t_a2,y_int_t_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_topo,res_topo),np.arange(area_coord_s[3],area_coord_s[2]+res_topo,res_topo)
-x_int_m_a2,y_int_m_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_moho,res_moho),np.arange(area_coord_s[3],area_coord_s[2]+res_moho,res_moho)
-x_int_l_a2,y_int_l_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_lab,res_lab),np.arange(area_coord_s[3],area_coord_s[2]+res_lab,res_lab)
-xi_int_t_a2,yi_int_t_a2 = np.meshgrid(x_int_t_a2,y_int_t_a2)
-xi_int_m_a2,yi_int_m_a2 = np.meshgrid(x_int_m_a2,y_int_m_a2)
-xi_int_l_a2,yi_int_l_a2 = np.meshgrid(x_int_l_a2,y_int_l_a2)
-interp_topo_a2 = RegularGridInterpolator((np.unique(xi_topo_s_a2),np.unique(yi_topo_s_a2)),grid_topo_s_a2)
-grid_topo_a2 = interp_topo_a2((xi_int_t_a2,yi_int_t_a2))
-interp_sed_a2 = RegularGridInterpolator((np.unique(xi_sed_s_a2),np.unique(yi_sed_s_a2)),grid_sed_s_a2)
-grid_sed_a2 = interp_sed_a2((xi_int_t_a2,yi_int_t_a2),method='linear')
-interp_moho_a2 = RegularGridInterpolator((np.unique(xi_moho_s_a2),np.unique(yi_moho_s_a2)),grid_moho_s_a2)
-grid_moho_a2 = interp_moho_a2((xi_int_m_a2,yi_int_m_a2))
-grid_moho_for_topo_a2 = interp_moho_a2((xi_int_t_a2,yi_int_t_a2))
-interp_lab_a2 = RegularGridInterpolator((np.unique(xi_lab_s_a2),np.unique(yi_lab_s_a2)),grid_lab_s_a2)
-grid_lab_a2 = interp_lab_a2((xi_int_l_a2,yi_int_l_a2))
-grid_lab_for_topo_a2 = interp_lab_a2((xi_int_t_a2,yi_int_t_a2))
-xi_smos_s_a2, yi_smos_s_a2, A_s_a2 = gepy.in_area_s(area_coord_s,xi_smos,yi_smos,grid_A_ws)
-xii_smos_s_a2,yii_smos_s_a2   = np.meshgrid(xi_smos_s_a2,yi_smos_s_a2)    
-res_HP = 12500
-x_int_HP_a2,y_int_HP_a2 = np.arange(area_coord_s[0],area_coord_s[1]+res_HP,res_HP),  np.arange(area_coord_s[3],area_coord_s[2]+res_HP,res_HP)
-xi_int_HP_a2,yi_int_HP_a2 = np.meshgrid(x_int_HP_a2,y_int_HP_a2)
-grid_A_a2  = griddata((xii_smos_s_a2.flatten(), yii_smos_s_a2.flatten()), np.transpose(A_s_a2).flatten(), (xi_int_HP_a2,yi_int_HP_a2),fill_value=0.000001)
-# interp_A = RegularGridInterpolator((x_int_HP,y_int_HP),np.transpose(grid_A))
-interp_A_a2 = RegularGridInterpolator((x_int_HP_a2,y_int_HP_a2),np.transpose(grid_A_a2))
-grid_A_for_topo_a2 = interp_A_a2((xi_int_t_a2,yi_int_t_a2))
-
-# select which interfaces are part of the world
-
-# profile_topo = np.full(len(profile_topo),np.mean(grid_topo_a2))
-# profile_sed = np.full(len(profile_sed),np.mean(grid_sed_a2))
-# profile_sed_for_topo = np.full(len(profile_sed_for_topo),np.mean(grid_sed_a2))
-# profile_moho = np.full(len(profile_moho),np.mean(grid_moho_a2))
-# profile_moho_for_topo = np.full(len(profile_topo),np.mean(grid_moho_for_topo_a2))
-# profile_lab = np.full(len(profile_lab),np.mean(grid_lab_a2))
-# profile_lab_for_topo = np.full(len(profile_topo),np.mean(grid_lab_for_topo_a2))
-# profile_A = np.full(len(profile_A),np.mean(grid_A_a2))
-# profile_A_for_topo = np.full(len(profile_A_for_topo),np.mean(grid_A_for_topo_a2))
-
-profile_sed_depth = profile_topo-profile_sed_for_topo
-
+"""
 #%% plot that shit
 
 vmin = np.nanmin(data_calc[0][2])
@@ -203,86 +108,21 @@ ax.contour(data_calc[1][0],data_calc[1][1],data_calc[1][2],levels=[0,1500,3000,4
 ax.coastlines(resolution='10m',linewidth=0.5)
 plt.show()
 
-#%% build the world
+"""
 
-# create 2d mesh from the input data
+#%%___build the world_________________________________
 
-world_start = [0,4*km] 
-world_end = [profile_length,-220*km]
+mesh,line_list = gepy.build_world_2d(data_list, profile_coord, area=None,
+                                      layers=layers, do_sediments=do_sediments)
 
-world = mt.createWorld(start=world_start,end=world_end, worldMarker=False)
 
-topo_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_t,profile_topo)],marker = 5,boundaryMarker = 5,isClosed=False)
-sed_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_t,profile_topo-profile_sed_for_topo)],marker = 6,boundaryMarker = 6,isClosed=False)
-moho_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_m,-profile_moho)],marker = 7,boundaryMarker = 7,isClosed=False)
-lab_line = mt.createPolygon([[a,b] for a,b in zip(dist_prof_l,-profile_lab)],marker = 8,boundaryMarker = 8,isClosed=False)
 
-world = world + sed_line + moho_line + lab_line + topo_line
 
-mesh = mt.createMesh(world,quality=34,area=profile_length*4)#,area=500000
 
-# create lists for temperature and heat production that are to be applied to the nodes
-force = np.zeros(mesh.nodeCount())
-force_marker = np.zeros(mesh.nodeCount())
-Tnode = []
-for i, node in enumerate(mesh.nodes()):
-    x,y,z = node.pos()
-    
-    idx_t_0,idx_t_1 = np.argsort(np.abs(dist_prof_t-x))[0],np.argsort(np.abs(dist_prof_t-x))[1]
-    
-    m_s = (profile_sed_depth[idx_t_0]-profile_sed_depth[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    y_s = m_s * (x-dist_prof_t[idx_t_1]) + profile_sed_depth[idx_t_1] 
-    
-    m_t = (profile_topo[idx_t_0]-profile_topo[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    y_t = m_t * (x-dist_prof_t[idx_t_1]) + profile_topo[idx_t_1] 
-    
-    idx_tA = np.argmin(np.abs(dist_prof_t-x))
-    idx_bA = np.argmin(np.abs(dist_prof_m-x))
-    
-    idx_t = np.argmin(np.abs(dist_prof_t-x))
-    idx_l = np.argmin(np.abs(dist_prof_l-x))
-    
-    idx_A = np.argmin(np.abs(dist_prof_t-x))
-    
-    if y >= -profile_moho[idx_bA] and y <= y_s:
-        force[i] = profile_A_for_topo[idx_A]
-        # force[i] = 0.000001
-        force_marker[i] = node.marker()
-    else:
-        force[i] = 0
-    
-    if y >= y_t:
-        T0fornode = [node.id(),0]
-        Tnode.append(T0fornode)
-    if y <= -profile_lab[idx_l]:
-        TLABfornode = [node.id(),1315]
-        Tnode.append(TLABfornode)
+#%%___apply correct markers to cells and nodes________
 
-# apply correct marker to the cells
-crust_cells = []
-crust_nodes = []
-for cell in mesh.cells():
-    center = cell.center()
-    x, y, z = center.x(), center.y(), center.z()
-    
-    idx_t_0,idx_t_1 = np.argsort(np.abs(dist_prof_t-x))[0],np.argsort(np.abs(dist_prof_t-x))[1]
-    
-    m_t = (profile_topo[idx_t_0]-profile_topo[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    m_s = (profile_sed_depth[idx_t_0]-profile_sed_depth[idx_t_1])/(dist_prof_t[idx_t_0]-dist_prof_t[idx_t_1])
-    y_t = m_t * (x-dist_prof_t[idx_t_1]) + profile_topo[idx_t_1] 
-    y_s = m_s * (x-dist_prof_t[idx_t_1]) + profile_sed_depth[idx_t_1] 
-    
-    idx_m = np.argmin(np.abs(dist_prof_m-x))
-    idx_l = np.argmin(np.abs(dist_prof_l-x))
-    
-    if y < y_t and y > y_s:
-        cell.setMarker(5)
-    if y < y_s:
-        cell.setMarker(6)
-    if y < -profile_moho[idx_m]:
-        cell.setMarker(7)
-    if y < -profile_lab[idx_l]:
-        cell.setMarker(8)
+mesh,force = gepy.assign_markers_2d(data_list, mesh,
+                         layers=layers, do_sediments=do_sediments, do_hp=do_hp, hp_0=hp_0, tc=tc)
     
 # #%% quick world plot to check
 
@@ -298,37 +138,16 @@ for cell in mesh.cells():
 
 #%% run calc and get shf
 
-T = pg.solver.solveFiniteElements(mesh,
-                                a={0: 1.5, 5: 1.5, 6: 2.7, 7: 3.5, 8: 4.0},#0: 1.5, 1: 1.5
-                                f=force,
-                                bc={'Dirichlet': {8: 1315, 5: 0}},verbose=True)# {'Node': Tnode} }, 
+T = gepy.calc_temp(mesh, "2D", force, layers,do_sediments = True,tc = tc)
+
 # pg.show(mesh,data=T,showMesh=True, label='Temperature in °C', cMap="inferno",nCols=256)
 
-T_list = [T[i] for i in range(len(T))]
+ghf_2D = gepy.calc_ghf(T, mesh, data_list, "2D", tc)
+       
 
-# similarly to the 3D case, I'll probably want to select other locations for the measurement points
-topcoord = []
-for i in range(len(dist_prof_t)):
-    topcoord.append([dist_prof_t[i],profile_topo[i]-1,0])
 
-gradientTop = pg.solver.grad(mesh, T, topcoord)
-
-geology_list = []
-shf = np.zeros(len(gradientTop))
-for i in range(len(gradientTop)):
-    point = pg.RVector3(topcoord[i][0],topcoord[i][1],topcoord[i][2])
-    cell = mesh.findCell(point)
-    geology = cell.marker()
-    geology_list.append(geology)
-    if geology == 6:   
-        shf[i] = np.linalg.norm(gradientTop[i,:])*2.7
-    elif geology == 5:
-        shf[i] = np.linalg.norm(gradientTop[i,:])*1.5
-
-shf_2D = shf*1000        
-
-#%%
-
+#%% temperature depth anomaly plot
+'''
 # fig,ax = plt.subplots(figsize=(9,9),dpi=300)
 # pg.show(mesh,showMesh=True,markers=True,ax=ax,clipBoundaryMarkers=True)
 # ax.set_xlim([40000,60000])
@@ -362,6 +181,8 @@ for i, node in enumerate(mesh.nodes()):
 
 
 # gradient_full = pg.solver.grad(mesh,T)
+
+
 # gradient_nodes = pg.solver.grad(mesh, T, nodes_pos)
 # gradient_nodes_norm = np.linalg.norm(gradient_nodes,axis=1)
 
@@ -386,6 +207,7 @@ ax.set_aspect('auto')
 # ax.set_xlabel('x in m')
 # ax.set_ylabel('depth in m')
 # ax.set_aspect('auto')
+'''
 
 #%% Plot data and compare to 1D result
 
