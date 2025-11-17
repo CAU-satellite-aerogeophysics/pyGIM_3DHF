@@ -1,0 +1,9 @@
+[project]
+name = "pyGIM_3DHG"
+version = "0.1.0"
+description = "2D and 3D geothermal heatflow modelling"
+readme = "README.md"
+authors = [{name = "G.-M. Huettner"}]
+requires-python = ">=3.8"
+license = {text = "MIT"}
+dependencies = []
